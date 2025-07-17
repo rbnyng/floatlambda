@@ -6,6 +6,7 @@ use std::fmt;
 use std::rc::Rc;
 use clap::Parser as ClapParser;
 use std::path::{Path, PathBuf};
+use rand::Rng;
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = None)]
@@ -307,6 +308,11 @@ impl Term {
 
             Term::Builtin(op) => {
                 let arity = get_builtin_arity(op)?;
+                // If arity is 0, execute immediately. Otherwise, create a curried function.
+                if arity == 0 {
+                    return execute_builtin(op, &[], heap);
+                }
+
                 let builtin_closure = BuiltinClosure {
                     op: op.clone(),
                     arity,
@@ -383,10 +389,12 @@ impl Term {
 // --- Builtin Logic Helpers ---
 fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
     match op {
+        // Nullary
+        "read-char" | "read-line" => Ok(0),
         // Unary
-        "neg" | "abs" | "sqrt" | "fuzzy_not" | "car" | "cdr" => Ok(1),
+        "neg" | "abs" | "sqrt" | "fuzzy_not" | "car" | "cdr" | "print" => Ok(1),
         // Binary
-        "+" | "-" | "*" | "/" | "==" | "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" | "eq?" => Ok(2),
+        "+" | "-" | "*" | "/" | "==" | "eq?" | "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" => Ok(2),
         _ => Err(EvalError::TypeError(format!("Unknown builtin: {}", op))),
     }
 }
@@ -458,6 +466,81 @@ fn execute_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalE
                 Err(EvalError::TypeError(format!("'cdr' expects a pair, but got a number or nil.")))
             }
         }
+
+        // --- I/O Builtins ---
+
+        "print" => {
+            let mut current_val = args[0];
+            let mut rng = rand::thread_rng();
+
+            // Loop through the list (cons cells)
+            loop {
+                if current_val == NIL_VALUE {
+                    break;
+                }
+
+                let id = decode_heap_pointer(current_val).ok_or_else(|| {
+                    EvalError::TypeError("print expects a list, but found a number".to_string())
+                })?;
+                
+                if let Some(HeapObject::Pair(car, cdr)) = heap.get(id) {
+                    let char_f64 = *car;
+                    let next_cdr = *cdr;
+
+                    // --- Probabilistic Character Logic ---
+                    if char_f64.is_finite() {
+                        let floor_code = char_f64.floor() as u32;
+                        let fract = char_f64.fract();
+                        
+                        let final_code = if fract > 0.0 && rng.gen::<f64>() < fract {
+                            char_f64.ceil() as u32
+                        } else {
+                            floor_code
+                        };
+
+                        if let Some(c) = std::char::from_u32(final_code) {
+                            print!("{}", c);
+                        }
+                    }
+                    // --- End Probabilistic Logic ---
+                    
+                    current_val = next_cdr;
+                } else {
+                    return Err(EvalError::TypeError("print expects a proper list".to_string()));
+                }
+            }
+            
+            std::io::Write::flush(&mut std::io::stdout()).unwrap();
+            Ok(1.0) // Return 1.0 for success
+        }
+
+        "read-char" => {
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_err() {
+                return Ok(NIL_VALUE); // Return nil on error
+            }
+            // Return the code of the first character, or 0 if the line is empty
+            let code = input.chars().next().map_or(0, |c| c as u32);
+            Ok(code as f64)
+        }
+        
+        "read-line" => {
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_err() {
+                    return Ok(NIL_VALUE);
+            }
+            
+            // Build the list of character codes in reverse
+            let mut list_val = NIL_VALUE;
+            for c in input.trim_end().chars().rev() {
+                let char_code = c as u32 as f64;
+                let new_pair = HeapObject::Pair(char_code, list_val);
+                let new_id = heap.register(new_pair);
+                list_val = encode_heap_pointer(new_id);
+            }
+            Ok(list_val)
+        }
+        
         _ => unreachable!(),
     }
 }
@@ -533,10 +616,28 @@ impl Parser {
     }
 
     fn skip_whitespace(&mut self) {
-        while let Some(c) = self.current_char() {
-            if c.is_whitespace() {
-                self.advance();
+        loop {
+            // First, skip all standard whitespace characters.
+            while let Some(c) = self.current_char() {
+                if c.is_whitespace() {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+
+            // After skipping whitespace, check if we're at a comment.
+            if self.current_char() == Some('#') {
+                // If so, consume characters until a newline or end of input.
+                while let Some(c) = self.current_char() {
+                    if c == '\n' {
+                        break;
+                    }
+                    self.advance();
+                }
+                // The loop continues, so we'll skip the newline on the next iteration.
             } else {
+                // If we're not at a comment, we're done.
                 break;
             }
         }
@@ -767,9 +868,10 @@ impl Parser {
     fn parse_identifier(&mut self) -> Result<Term, ParseError> {
         let name = self.parse_identifier_string()?;
         match name.as_str() {
-            "neg" | "abs" | "sqrt" | "fuzzy_not" | "+" | "-" | "*" | "/" | "==" |
-            "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "car" | "cdr" | "eq?" |
-            "fuzzy_and" | "fuzzy_or" | "rem" | "div" => Ok(Term::Builtin(name)),
+            "neg" | "abs" | "sqrt" | "fuzzy_not" | "+" | "-" | "*" | "/" | "==" | "eq?" |
+            "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "car" | "cdr" |
+            "fuzzy_and" | "fuzzy_or" | "rem" | "div" |
+            "print" | "read-char" | "read-line" => Ok(Term::Builtin(name)), // Add new builtins
             _ => Ok(Term::Var(name)),
         }
     }
@@ -1369,4 +1471,44 @@ mod tests {
         let code = "(car (λx.x))";
         assert_eq!(eval_err(code), EvalError::TypeError("'car' expects a pair, but got another heap object.".to_string()));
     }
+
+    // --- String Tests ---
+
+    #[test]
+    fn test_string_as_list_manipulation() {
+        // let s = "Hi" -> (cons 72.0 (cons 105.0 nil))
+        let code = "
+            let s = (cons 72.0 (cons 105.0 nil)) in
+            let first_char = (car s) in
+            # Test comments
+            let second_char = (car (cdr s)) in
+            second_char
+        ";
+        assert_eq!(eval_ok(code), 105.0);
+    
+        // Also check that the list is nil-terminated correctly.
+        let code_nil_check = "
+            let s = (cons 72.0 (cons 105.0 nil)) in
+            (eq? (cdr (cdr s)) nil)
+        ";
+        assert_eq!(eval_ok(code_nil_check), 1.0);
+    }
+
+    #[test]
+    fn test_strlen_on_string_list() {
+        // Define strlen, which finds the length of a list.
+        let strlen_code = "let rec strlen = (λl. if (eq? l nil) then 0 else (+ 1 (strlen (cdr l))))";
+        
+        // Create the string "cat" -> (cons 99 (cons 97 (cons 116 nil)))
+        let str_cat = "(cons 99.0 (cons 97.0 (cons 116.0 nil)))";
+    
+        let full_code = format!("
+            {} in 
+            (strlen {})
+        ", strlen_code, str_cat);
+    
+        // The length of "cat" is 3.
+        assert_eq!(eval_ok(&full_code), 3.0);
+    }
+
 }
