@@ -10,7 +10,7 @@ pub mod evaluator;
 
 // --- Public API Re-exports ---
 // This makes the core components available to users of the library
-// (like our main.rs) without them needing to know the internal file structure.
+// without them needing to know the internal file structure.
 pub use ast::Term;
 pub use error::{EvalError, ParseError};
 pub use memory::{Heap, NIL_VALUE};
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn test_gc_on_long_list() {
         let mut heap = Heap::new();
-        let mut global_env = HashMap::new();
+        let global_env = HashMap::new();
         
         let mut list_str = "nil".to_string();
         for i in 0..100 {
@@ -505,4 +505,52 @@ mod tests {
         // The length of "cat" is 3.
         assert_eq!(eval_ok(&full_code), 3.0);
     }
+
+    #[test]
+    fn test_builtin_length() {
+        assert_eq!(eval_ok("(length nil)"), 0.0);
+        let code = "(length (cons 10 (cons 20 (cons 30 nil))))";
+        assert_eq!(eval_ok(code), 3.0);
+        // Test error on non-list
+        assert!(eval_err("(length 1)").is_type_error());
+    }
+
+    #[test]
+    fn test_builtin_map() {
+        let code = "let l = (cons 1 (cons 2 (cons 3 nil))) in let add10 = (+ 10) in (map add10 l)";
+        // Compare the string representation for lists as we don't have a deep eq primitive
+        assert_eq!(eval_ok(&format!("(car {})", code)), 11.0);
+        assert_eq!(eval_ok(&format!("(car (cdr {}))", code)), 12.0);
+        assert_eq!(eval_ok(&format!("(car (cdr (cdr {})))", code)), 13.0);
+    }
+
+    #[test]
+    fn test_builtin_filter() {
+        let code = "
+            let l = (cons 1 (cons 2 (cons 3 (cons 4 nil)))) in 
+            let is_even = (λx. (eq? 0 (rem x 2))) in
+            (filter is_even l)
+        ";
+         assert_eq!(eval_ok(&format!("(car {})", code)), 2.0);
+         assert_eq!(eval_ok(&format!("(car (cdr {}))", code)), 4.0);
+         assert_eq!(eval_ok(&format!("(length {})", code)), 2.0);
+    }
+
+    #[test]
+    fn test_builtin_foldl() {
+        let code = "
+            let l = (cons 1 (cons 2 (cons 3 (cons 4 nil)))) in
+            (foldl + 0 l)
+        ";
+        // 0+1=1, 1+2=3, 3+3=6, 6+4=10
+        assert_eq!(eval_ok(code), 10.0);
+    }
+    
+    // Helper for tests to check error variants easily
+    impl EvalError {
+        fn is_type_error(&self) -> bool { matches!(self, EvalError::TypeError(_)) }
+    }
+
+
+    
 }

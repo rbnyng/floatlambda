@@ -292,7 +292,8 @@ impl Parser {
             "neg" | "abs" | "sqrt" | "fuzzy_not" | "+" | "-" | "*" | "/" | "==" | "eq?" |
             "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "car" | "cdr" |
             "fuzzy_and" | "fuzzy_or" | "rem" | "div" |
-            "print" | "read-char" | "read-line" => Ok(Term::Builtin(name)), // Add new builtins
+            "print" | "read-char" | "read-line" |
+            "length" | "map" | "filter" | "foldl" => Ok(Term::Builtin(name)), 
             _ => Ok(Term::Var(name)),
         }
     }

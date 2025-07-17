@@ -1,0 +1,66 @@
+# --- FloatLambda Standard Library Prelude ---
+
+# --- Function Utilities ---
+
+# The identity function: returns its argument unchanged.
+let identity = (λx. x)
+
+# The constant function: returns a function that always returns the first argument.
+let const = (λx. λy. x)
+
+# Composes two functions. (compose f g x) is equivalent to (f (g x)).
+let compose = (λf. λg. λx. (f (g x)))
+
+
+# --- Logical Operators ---
+
+# Logical NOT.
+let not = (λx. (if x 0 1))
+
+# Logical AND (with short-circuiting).
+let and = (λa. λb. (if a b 0))
+
+# Logical OR (with short-circuiting).
+let or = (λa. λb. (if a 1 b))
+
+
+# --- List Utilities ---
+
+# Checks if a list is empty.
+let null? = (λl. (eq? l nil))
+
+# Appends two lists together.
+let rec append = (λl1. λl2. 
+    (if (null? l1) 
+        l2
+        (cons (car l1) (append (cdr l1) l2))
+    )
+)
+
+# Returns the last element of a list.
+let rec last = (λl. 
+    (if (null? (cdr l)) 
+        (car l) 
+        (last (cdr l))
+    )
+)
+
+# Reverses a list.
+let rec reverse_iter = (λl. λacc.
+    (if (null? l)
+        acc
+        (reverse_iter (cdr l) (cons (car l) acc))
+    )
+)
+let reverse = (λl. (reverse_iter l nil))
+
+
+# --- Higher-Order List Functions ---
+
+# Returns 1.0 if any element in the list satisfies the predicate, otherwise 0.0.
+# Example: (any? is_even my_list)
+let any? = (λp. λl. (foldl (λacc. λelem. (or acc (p elem))) 0 l))
+
+# Returns 1.0 if all elements in the list satisfy the predicate, otherwise 0.0.
+# Example: (all? is_positive my_list)
+let all? = (λp. λl. (foldl (λacc. λelem. (and acc (p elem))) 1 l))

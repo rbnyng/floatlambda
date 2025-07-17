@@ -15,6 +15,10 @@ use float_lambda::{
     parser::parse,
 };
 
+/// The prelude script, containing standard library functions written in FloatLambda.
+/// This is automatically loaded when the interpreter starts by embedding the file at compile time.
+const PRELUDE_SRC: &str = include_str!("prelude.fl");
+
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -47,10 +51,13 @@ fn process_input(
     input: &str,
     heap: &mut Heap,
     global_env_map: &mut HashMap<String, f64>,
+    is_prelude: bool,
 ) -> Result<f64, String> {
     let term = parse(input).map_err(|e| format!("Parse error: {}", e))?;
-    println!("Parsed: {}", term);
-
+    if !is_prelude {
+        println!("Parsed: {}", term);
+    }
+    
     // Create the evaluation environment from the REPL's global state
     let eval_env = Rc::new(global_env_map.clone());
     
@@ -109,7 +116,7 @@ pub fn repl() {
             continue;
         }
 
-        match process_input(input_str, &mut heap, &mut global_env_map) {
+        match process_input(input_str, &mut heap, &mut global_env_map, false) {
             Ok(result) => {
                 last_result = result;
                 print_result(result, &heap);
@@ -121,6 +128,15 @@ pub fn repl() {
 
 fn main() {
     let cli = Cli::parse();
+
+    // --- SETUP: Create heap and env, then load prelude ---
+    let mut heap = Heap::new();
+    let mut global_env_map = HashMap::new();
+
+    if let Err(e) = process_input(PRELUDE_SRC, &mut heap, &mut global_env_map, true) {
+        eprintln!("Fatal Error loading prelude: {}", e);
+        std::process::exit(1);
+    }
 
     if let Some(path) = cli.file {
         // A file path was provided, so we run the script.
@@ -144,7 +160,7 @@ fn run_script(path: &Path) -> Result<(), String> {
     let mut global_env_map = HashMap::new();
 
     // The existing process_input function can be reused here.
-    let result = process_input(&content, &mut table, &mut global_env_map)?;
+    let result = process_input(&content, &mut table, &mut global_env_map, false)?;
 
     // Print the final result of the script.
     print_result(result, &table);
