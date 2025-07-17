@@ -37,11 +37,13 @@ pub enum HeapObject {
     UserFunc(Closure),
     BuiltinFunc(BuiltinClosure),
     Pair(f64, f64), // The classic "cons cell" for building lists.
+    Free(u64), // Points to the next free slot
 }
 
 // A central table to store all living heap-allocated objects.
 pub struct Heap {
     objects: Vec<Option<HeapObject>>,
+    free_list_head: Option<u64>,
 }
 
 impl Heap {
@@ -50,16 +52,25 @@ impl Heap {
     }
 
     pub fn new() -> Self {
-        Self { objects: Vec::new() }
+        Self { objects: Vec::new(), free_list_head: None }
     }
 
     pub fn register(&mut self, obj: HeapObject) -> u64 {
-        for (i, slot) in self.objects.iter_mut().enumerate() {
-            if slot.is_none() {
-                *slot = Some(obj);
-                return i as u64;
-            }
+        if let Some(free_index) = self.free_list_head {
+            // Pop the head of the free list
+            let next_free = self.objects[free_index as usize].take();
+            self.free_list_head = if let Some(HeapObject::Free(next)) = next_free {
+                Some(next)
+            } else {
+                None // Should not happen in a correct implementation
+            };
+            
+            // Place the new object in the reclaimed slot
+            self.objects[free_index as usize] = Some(obj);
+            return free_index;
         }
+
+        // If the free list is empty, fall back to the old method
         self.objects.push(Some(obj));
         (self.objects.len() - 1) as u64
     }
@@ -105,21 +116,36 @@ impl Heap {
                     HeapObject::BuiltinFunc(_) => {
                         // Builtins don't hold references to other heap objects.
                     }
+                    HeapObject::Free(_) => {
+                        
+                    }
                 }
             }
         }
 
         // --- Sweep Phase ---
-        for i in 0..self.objects.len() {
+        self.free_list_head = None; // Reset the free list
+        for i in (0..self.objects.len()).rev() { // Iterate backwards
             if !marked[i] {
-                self.objects[i] = None;
+                // This object is garbage, add it to the free list.
+                let next_free = self.free_list_head.unwrap_or(u64::MAX); // Use a sentinel
+                self.objects[i] = Some(HeapObject::Free(next_free));
+                self.free_list_head = Some(i as u64);
             }
         }
     }
 
     // Helper for debugging in the REPL
     pub fn alive_count(&self) -> usize {
-        self.objects.iter().filter(|o| o.is_some()).count()
+        self.objects
+            .iter()
+            .filter(|o| match o {
+                // Free slots and empty slots are not "alive"
+                Some(HeapObject::Free(_)) | None => false,
+                // Any other Some(...) variant is alive
+                Some(_) => true,
+            })
+            .count()
     }
 }
 
@@ -351,6 +377,9 @@ impl Term {
                         // Applying a pair is a type error.
                         HeapObject::Pair(_, _) => {
                             Err(EvalError::TypeError(format!("Cannot apply a non-function value: Pair<{}>", id)))
+                        }
+                        HeapObject::Free(_) => {
+                            Err(EvalError::DanglingPointerError(id))
                         }
                     }
                 } else {
@@ -1037,6 +1066,7 @@ fn print_result(result: f64, heap: &Heap) {
             Some(HeapObject::UserFunc(_)) => "Function",
             Some(HeapObject::BuiltinFunc(_)) => "Builtin",
             Some(HeapObject::Pair(_, _)) => "Pair",
+            Some(HeapObject::Free(_)) => "FreeSlot",
             None => "Invalid",
         };
         println!("Result: {}<{}> ({} objects alive)", obj_type, id, heap.alive_count());
