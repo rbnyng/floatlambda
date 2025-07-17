@@ -50,12 +50,11 @@ impl Heap {
         if let Some(free_index) = self.free_list_head {
             // Pop the head of the free list
             let next_free = self.objects[free_index as usize].take();
-            self.free_list_head = if let Some(HeapObject::Free(next)) = next_free {
-                Some(next)
+            self.free_list_head = if let Some(HeapObject::Free(next_id)) = next_free {
+                if next_id == u64::MAX { None } else { Some(next_id) } // Handle sentinel
             } else {
-                None // Should not happen in a correct implementation
-            };
-            
+                None
+            };            
             // Place the new object in the reclaimed slot
             self.objects[free_index as usize] = Some(obj);
             return free_index;
@@ -119,8 +118,8 @@ impl Heap {
         for i in (0..self.objects.len()).rev() { // Iterate backwards
             if !marked[i] {
                 // This object is garbage, add it to the free list.
-                let next_free = self.free_list_head.unwrap_or(u64::MAX); // Use a sentinel
-                self.objects[i] = Some(HeapObject::Free(next_free));
+                let next_free = self.free_list_head;
+                self.objects[i] = Some(HeapObject::Free(next_free.unwrap_or(u64::MAX))); 
                 self.free_list_head = Some(i as u64);
             }
         }

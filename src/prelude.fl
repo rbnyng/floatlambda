@@ -3,64 +3,66 @@
 # --- Function Utilities ---
 
 # The identity function: returns its argument unchanged.
-let identity = (λx. x)
+let identity = (λx. x) in
 
 # The constant function: returns a function that always returns the first argument.
-let const = (λx. λy. x)
+let const = (λx. λy. x) in
 
 # Composes two functions. (compose f g x) is equivalent to (f (g x)).
-let compose = (λf. λg. λx. (f (g x)))
+let compose = (λf. λg. λx. (f (g x))) in
 
 
 # --- Logical Operators ---
 
 # Logical NOT.
-let not = (λx. (if x 0 1))
-
+let not = (λx. (if x then 0 else 1)) in
+ 
 # Logical AND (with short-circuiting).
-let and = (λa. λb. (if a b 0))
+let and = (λa. λb. (if a then b else 0)) in
 
 # Logical OR (with short-circuiting).
-let or = (λa. λb. (if a 1 b))
-
+let or = (λa. λb. (if a then 1 else b)) in
 
 # --- List Utilities ---
 
 # Checks if a list is empty.
-let null? = (λl. (eq? l nil))
+let null? = (λl. (eq? l nil)) in
 
 # Appends two lists together.
 let rec append = (λl1. λl2. 
     (if (null? l1) 
-        l2
-        (cons (car l1) (append (cdr l1) l2))
+        then l2
+        else (cons (car l1) (append (cdr l1) l2))
     )
-)
+) in
 
 # Returns the last element of a list.
 let rec last = (λl. 
     (if (null? (cdr l)) 
-        (car l) 
-        (last (cdr l))
+        then (car l) 
+        else (last (cdr l))
     )
-)
+) in
 
 # Reverses a list.
 let rec reverse_iter = (λl. λacc.
     (if (null? l)
-        acc
-        (reverse_iter (cdr l) (cons (car l) acc))
+        then acc
+        else (reverse_iter (cdr l) (cons (car l) acc))
     )
-)
-let reverse = (λl. (reverse_iter l nil))
+) in
+let reverse = (λl. (reverse_iter l nil)) in
 
 
 # --- Higher-Order List Functions ---
 
 # Returns 1.0 if any element in the list satisfies the predicate, otherwise 0.0.
 # Example: (any? is_even my_list)
-let any? = (λp. λl. (foldl (λacc. λelem. (or acc (p elem))) 0 l))
+let any? = (λp. λl. (foldl (λacc. λelem. (or acc (p elem))) 0 l)) in
 
 # Returns 1.0 if all elements in the list satisfy the predicate, otherwise 0.0.
 # Example: (all? is_positive my_list)
-let all? = (λp. λl. (foldl (λacc. λelem. (and acc (p elem))) 1 l))
+let all? = (λp. λl. (foldl (λacc. λelem. (and acc (p elem))) 1 l)) in
+
+# Return identity function as the result of loading the prelude
+identity
