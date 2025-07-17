@@ -237,7 +237,7 @@ fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
         // Nullary
         "read-char" | "read-line" => Ok(0),
         // Unary
-        "neg" | "abs" | "sqrt" | "fuzzy_not" | "car" | "cdr" | "print" | "length" => Ok(1),
+        "neg" | "abs" | "sqrt" | "fuzzy_not" | "car" | "cdr" | "print" | "length" | "exp" => Ok(1),
         // Binary
         "+" | "-" | "*" | "/" | "==" | "eq?" | "<" | ">" | "<=" | ">=" | "min" | "max" |
         "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" | "map" | "filter" | "diff" | "integrate" => Ok(2),
@@ -402,6 +402,7 @@ fn execute_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalE
         "abs" => Ok(args[0].abs()),
         "sqrt" => Ok(if args[0] < 0.0 { f64::NAN } else { args[0].sqrt() }),
         "fuzzy_not" => Ok(1.0 - args[0].max(0.0).min(1.0)),
+        "exp" => Ok(args[0].exp()), 
         "+" => Ok(args[0] + args[1]),
         "-" => Ok(args[0] - args[1]),
         "*" => Ok(args[0] * args[1]),
