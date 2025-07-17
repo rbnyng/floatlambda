@@ -162,7 +162,7 @@ let F = λx.(integrate3 f 0.0 x) in    # Antiderivative
 (diff F 5.0)                          # Should equal f(5) = 25.0
 ```
 
-### (Kind of) Zero-Overhead Autodiff
+### (Kind of) Autodiff
 Unlike autodiff libraries that box values in special tensor types, FloatLambda gets differentiation for free because:
 - Every value is already numeric
 - Every operation is already differentiable  
