@@ -44,7 +44,7 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let id1 = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("add_t expects a tensor".to_string()))?;
             let id2 = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("add_t expects a tensor".to_string()))?;
             let (t1, t2) = (heap.get_tensor_mut(id1)?.clone(), heap.get_tensor_mut(id2)?.clone());
-            let res = ops::add(id1, &t1, id2, &t2);
+            let res = ops::add(id1, &t1, id2, &t2)?;
             let id = heap.register(HeapObject::Tensor(res));
             Ok(encode_heap_pointer(id))
         }
@@ -52,7 +52,7 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let id1 = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("matmul expects a tensor".to_string()))?;
             let id2 = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("matmul expects a tensor".to_string()))?;
             let (t1, t2) = (heap.get_tensor_mut(id1)?.clone(), heap.get_tensor_mut(id2)?.clone());
-            let res = ops::matmul(id1, &t1, id2, &t2);
+            let res = ops::matmul(id1, &t1, id2, &t2)?;
             let id = heap.register(HeapObject::Tensor(res));
             Ok(encode_heap_pointer(id))
         }
@@ -74,14 +74,14 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("reshape expects a tensor".to_string()))?;
             let new_shape_vec = list_to_vec(args[1], heap)?.iter().map(|&x| x as usize).collect();
             let tensor = heap.get_tensor_mut(id)?.clone();
-            let result_tensor = ops::reshape(&tensor, new_shape_vec);
+            let result_tensor = ops::reshape(id, &tensor, new_shape_vec)?;
             let result_id = heap.register(HeapObject::Tensor(result_tensor));
             Ok(encode_heap_pointer(result_id))
         }
         "transpose" => {
             let id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("transpose expects a tensor".to_string()))?;
             let tensor = heap.get_tensor_mut(id)?.clone();
-            let (new_shape, new_data) = ops::transpose(&tensor.shape, &tensor.data);
+            let (new_shape, new_data) = ops::transpose(&tensor.shape, &tensor.data)?;
             let result_tensor = DifferentiableTensor::new(new_shape, new_data);
             let result_id = heap.register(HeapObject::Tensor(result_tensor));
             Ok(encode_heap_pointer(result_id))
@@ -90,8 +90,8 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("Operation expects a tensor".to_string()))?;
             let tensor = heap.get_tensor_mut(id)?.clone();
             let result_tensor = match op {
-                "sum_t" => ops::sum_t(&tensor),
-                "mean_t" => ops::mean_t(&tensor),
+                "sum_t" => ops::sum_t(id, &tensor),
+                "mean_t" => ops::mean_t(id, &tensor),
                 _ => unreachable!(),
             };
             let result_id = heap.register(HeapObject::Tensor(result_tensor));

@@ -117,7 +117,7 @@ mod tests {
         // Forward pass:
         let t1 = heap.get_tensor_mut(t_id).unwrap().clone();
         let t2 = heap.get_tensor_mut(t_id).unwrap().clone();
-        let result_tensor = ops::add(t_id, &t1, t_id, &t2);
+        let result_tensor = ops::add(t_id, &t1, t_id, &t2).unwrap();
         let result_id = heap.register(HeapObject::Tensor(result_tensor));
 
         // Backward pass:
@@ -152,7 +152,7 @@ mod tests {
         // --- Manual Forward and Backward Pass ---
         let x = heap.get_tensor_mut(x_id).unwrap().clone();
         let w = heap.get_tensor_mut(w_id).unwrap().clone();
-        let result_tensor = ops::matmul(x_id, &x, w_id, &w);
+        let result_tensor = ops::matmul(x_id, &x, w_id, &w).unwrap();
         let result_id = heap.register(HeapObject::Tensor(result_tensor));
 
         let topo_order = build_topo_order(result_id, &heap);

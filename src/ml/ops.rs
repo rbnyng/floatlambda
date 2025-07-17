@@ -3,11 +3,15 @@
 use std::rc::Rc;
 
 use super::tensor::{Context, DifferentiableTensor};
+use crate::error::EvalError;
 
 // --- Helper for transposing a matrix ---
-pub fn transpose(shape: &[usize], data: &[f64]) -> (Vec<usize>, Vec<f64>) {
+pub fn transpose(shape: &[usize], data: &[f64]) -> Result<(Vec<usize>, Vec<f64>), EvalError> {
     if shape.len() != 2 {
-        panic!("Transpose only supported for 2D tensors (matrices)");
+        return Err(EvalError::TypeError(format!(
+            "Transpose only supported for 2D tensors (matrices), but got shape with {} dimensions",
+            shape.len()
+        )));
     }
     let (rows, cols) = (shape[0], shape[1]);
     let mut new_data = vec![0.0; data.len()];
@@ -16,14 +20,17 @@ pub fn transpose(shape: &[usize], data: &[f64]) -> (Vec<usize>, Vec<f64>) {
             new_data[c * rows + r] = data[r * cols + c];
         }
     }
-    (vec![cols, rows], new_data)
+    Ok((vec![cols, rows], new_data))
 }
 
 // --- Public Operations ---
 
-pub fn add(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &DifferentiableTensor) -> DifferentiableTensor {
+pub fn add(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &DifferentiableTensor) -> Result<DifferentiableTensor, EvalError> {
     if t1.shape != t2.shape {
-        panic!("Shape mismatch for add operation: {:?} vs {:?}", t1.shape, t2.shape);
+        return Err(EvalError::TypeError(format!(
+            "Shape mismatch for add operation: {:?} vs {:?}",
+            t1.shape, t2.shape
+        )));
     }
     let new_data: Vec<f64> = t1.data.iter().zip(t2.data.iter()).map(|(a, b)| a + b).collect();
     let mut result = DifferentiableTensor::new(t1.shape.clone(), new_data);
@@ -42,12 +49,21 @@ pub fn add(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &Differentiabl
             }
         }),
     }));
-    result
+    Ok(result)
 }
 
-pub fn matmul(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &DifferentiableTensor) -> DifferentiableTensor {
-    if t1.shape.len() != 2 || t2.shape.len() != 2 || t1.shape[1] != t2.shape[0] {
-        panic!("Shape mismatch for matmul: {:?} vs {:?}", t1.shape, t2.shape);
+pub fn matmul(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &DifferentiableTensor) -> Result<DifferentiableTensor, EvalError> {
+    if t1.shape.len() != 2 || t2.shape.len() != 2 {
+        return Err(EvalError::TypeError(format!(
+            "Matmul only supports 2D tensors, but got shapes {:?} and {:?}",
+            t1.shape, t2.shape
+        )));
+    }
+    if t1.shape[1] != t2.shape[0] {
+        return Err(EvalError::TypeError(format!(
+            "Shape mismatch for matmul: inner dimensions must match, but got {:?} and {:?}",
+            t1.shape, t2.shape
+        )));
     }
     let (m, k1) = (t1.shape[0], t1.shape[1]);
     let (_k2, n) = (t2.shape[0], t2.shape[1]);
@@ -63,7 +79,7 @@ pub fn matmul(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &Differenti
         }
     }
     let new_shape = vec![m, n];
-    let mut result = DifferentiableTensor::new(new_shape, new_data);
+    let mut result = DifferentiableTensor::new(new_shape.clone(), new_data);
 
     let t1_shape = t1.shape.clone();
     let t1_data = t1.data.clone();
@@ -77,24 +93,26 @@ pub fn matmul(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &Differenti
             // grad_A = grad_C * B^T
             // grad_B = A^T * grad_C
 
-            let (t2_transposed_shape, t2_transposed_data) = transpose(&t2_shape, &t2_data);
-            let grad_a_op = matmul(u64::MAX, &DifferentiableTensor::new(vec![m, n], grad_output.to_vec()),
-                                   u64::MAX, &DifferentiableTensor::new(t2_transposed_shape, t2_transposed_data));
+            // .unwrap() is acceptable here because the forward pass already confirmed the shapes are 2D.
+            // A panic here would indicate an internal logic error.
+            let (t2_transposed_shape, t2_transposed_data) = transpose(&t2_shape, &t2_data).unwrap();
+            let grad_a_op = matmul(u64::MAX, &DifferentiableTensor::new(new_shape.clone(), grad_output.to_vec()),
+                                   u64::MAX, &DifferentiableTensor::new(t2_transposed_shape, t2_transposed_data)).unwrap();
             let t1_ref = heap.get_tensor_mut(t1_id).unwrap();
             for (g_out, g_in) in grad_a_op.data.iter().zip(t1_ref.grad.borrow_mut().iter_mut()) {
                 *g_in += g_out;
             }
 
-            let (t1_transposed_shape, t1_transposed_data) = transpose(&t1_shape, &t1_data);
+            let (t1_transposed_shape, t1_transposed_data) = transpose(&t1_shape, &t1_data).unwrap();
             let grad_b_op = matmul(u64::MAX, &DifferentiableTensor::new(t1_transposed_shape, t1_transposed_data),
-                                   u64::MAX, &DifferentiableTensor::new(vec![m, n], grad_output.to_vec()));
+                                   u64::MAX, &DifferentiableTensor::new(new_shape.clone(), grad_output.to_vec())).unwrap();
             let t2_ref = heap.get_tensor_mut(t2_id).unwrap();
             for (g_out, g_in) in grad_b_op.data.iter().zip(t2_ref.grad.borrow_mut().iter_mut()) {
                 *g_in += g_out;
             }
         }),
     }));
-    result
+    Ok(result)
 }
 
 pub fn sigmoid(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
@@ -116,33 +134,78 @@ pub fn sigmoid(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
     result
 }
 
-pub fn reshape(t: &DifferentiableTensor, new_shape_vec: Vec<usize>) -> DifferentiableTensor {
+pub fn reshape(t_id: u64, t: &DifferentiableTensor, new_shape_vec: Vec<usize>) -> Result<DifferentiableTensor, EvalError> {
     let original_len: usize = t.shape.iter().product();
     let new_len: usize = new_shape_vec.iter().product();
 
     if original_len != new_len {
-        panic!("Cannot reshape tensor of shape {:?} ({} elements) to {:?} ({} elements)",
-               t.shape, original_len, new_shape_vec, new_len);
+        return Err(EvalError::TypeError(format!(
+            "Cannot reshape tensor of shape {:?} ({} elements) to {:?} ({} elements)",
+            t.shape, original_len, new_shape_vec, new_len
+        )));
     }
     
-    // Reshape is a zero-cost operation on the data, but we need to handle its gradient.
-    // For simplicity here, we'll implement it without a gradient context for now.
-    // A full implementation would need to track the reshape for the backward pass.
-    DifferentiableTensor::new(new_shape_vec, t.data.clone())
+    let mut result = DifferentiableTensor::new(new_shape_vec, t.data.clone());
+
+    result.context = Some(Rc::new(Context {
+        parents: vec![t_id],
+        backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| {
+            // The gradient for reshape just flows straight through, element-wise.
+            let t_ref = heap.get_tensor_mut(t_id).unwrap();
+            let mut grad_input = t_ref.grad.borrow_mut();
+            for i in 0..grad_output.len() {
+                grad_input[i] += grad_output[i];
+            }
+        }),
+    }));
+    
+    Ok(result)
 }
 
-pub fn sum_t(t: &DifferentiableTensor) -> DifferentiableTensor {
+pub fn sum_t(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
     let sum_val = t.data.iter().sum();
     // The result is a scalar tensor.
-    DifferentiableTensor::new(vec![], vec![sum_val])
+    let mut result = DifferentiableTensor::new(vec![], vec![sum_val]);
+
+    result.context = Some(Rc::new(Context {
+        parents: vec![t_id],
+        backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| {
+            // Gradient of sum is 1. We broadcast the incoming scalar gradient to all inputs.
+            let scalar_grad = grad_output[0];
+            let t_ref = heap.get_tensor_mut(t_id).unwrap();
+            let mut grad_input = t_ref.grad.borrow_mut();
+            for g_in in grad_input.iter_mut() {
+                *g_in += scalar_grad;
+            }
+        }),
+    }));
+
+    result
 }
 
-pub fn mean_t(t: &DifferentiableTensor) -> DifferentiableTensor {
+pub fn mean_t(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
     let sum_val: f64 = t.data.iter().sum();
     let count = t.data.len() as f64;
     let mean_val = if count == 0.0 { 0.0 } else { sum_val / count };
     // The result is a scalar tensor.
-    DifferentiableTensor::new(vec![], vec![mean_val])
+    let mut result = DifferentiableTensor::new(vec![], vec![mean_val]);
+
+    if count > 0.0 {
+        result.context = Some(Rc::new(Context {
+            parents: vec![t_id],
+            backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| {
+                // Gradient of mean is 1/N. We broadcast the scaled incoming gradient.
+                let scalar_grad = grad_output[0] / count;
+                let t_ref = heap.get_tensor_mut(t_id).unwrap();
+                let mut grad_input = t_ref.grad.borrow_mut();
+                for g_in in grad_input.iter_mut() {
+                    *g_in += scalar_grad;
+                }
+            }),
+        }));
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -153,7 +216,7 @@ mod tests {
     fn test_ops_add() {
         let t1 = DifferentiableTensor::new(vec![2], vec![10.0, 20.0]);
         let t2 = DifferentiableTensor::new(vec![2], vec![1.0, 2.0]);
-        let result = add(0, &t1, 1, &t2); // IDs are dummies for this test
+        let result = add(0, &t1, 1, &t2).unwrap(); // IDs are dummies for this test
 
         assert_eq!(result.shape, vec![2]);
         assert_eq!(result.data, vec![11.0, 22.0]);
@@ -164,7 +227,7 @@ mod tests {
     fn test_ops_matmul() {
         let t1 = DifferentiableTensor::new(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]);
         let t2 = DifferentiableTensor::new(vec![2, 1], vec![5.0, 6.0]);
-        let result = matmul(0, &t1, 1, &t2);
+        let result = matmul(0, &t1, 1, &t2).unwrap();
 
         // [1, 2] * [5] = [1*5 + 2*6] = [17]
         // [3, 4]   [6]   [3*5 + 4*6] = [39]
@@ -174,11 +237,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_ops_matmul_bad_shapes() {
         let t1 = DifferentiableTensor::new(vec![2, 3], vec![0.0; 6]);
         let t2 = DifferentiableTensor::new(vec![2, 2], vec![0.0; 4]);
-        matmul(0, &t1, 1, &t2); // Inner dimensions (3 vs 2) don't match
+        assert!(matmul(0, &t1, 1, &t2).is_err()); // Inner dimensions (3 vs 2) don't match
     }
 
     #[test]
@@ -194,28 +256,30 @@ mod tests {
     #[test]
     fn test_ops_reshape() {
         let t = DifferentiableTensor::new(vec![2, 3], (1..=6).map(|x| x as f64).collect());
-        let reshaped = reshape(&t, vec![3, 2]);
+        let reshaped = reshape(0, &t, vec![3, 2]).unwrap();
         assert_eq!(reshaped.shape, vec![3, 2]);
         assert_eq!(reshaped.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert!(reshaped.context.is_some());
     }
 
     #[test]
-    #[should_panic]
     fn test_ops_reshape_bad_size() {
         let t = DifferentiableTensor::new(vec![2, 3], vec![0.0; 6]);
-        reshape(&t, vec![4, 2]); // 6 elements vs 8
+        assert!(reshape(0, &t, vec![4, 2]).is_err()); // 6 elements vs 8
     }
     
     #[test]
     fn test_ops_sum_and_mean() {
         let t = DifferentiableTensor::new(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]);
-        let sum_res = sum_t(&t);
-        let mean_res = mean_t(&t);
+        let sum_res = sum_t(0, &t);
+        let mean_res = mean_t(0, &t);
 
         assert_eq!(sum_res.shape, vec![]);
         assert_eq!(sum_res.data, vec![10.0]);
+        assert!(sum_res.context.is_some());
 
         assert_eq!(mean_res.shape, vec![]);
         assert_eq!(mean_res.data, vec![2.5]);
+        assert!(mean_res.context.is_some());
     }
 }
