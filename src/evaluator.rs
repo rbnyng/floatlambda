@@ -248,7 +248,7 @@ fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
         // Nullary
         "read-char" | "read-line" => Ok(0),
         // Unary
-        "neg" | "abs" | "sqrt" | "fuzzy_not" | "car" | "cdr" | "print" | "length"
+        "neg" | "abs" | "fuzzy_not" | "car" | "cdr" | "print" | "length"
         => Ok(1),
         // Binary
         "+" | "-" | "*" | "/" | "==" | "eq?" | "<" | ">" | "<=" | ">=" | "min" | "max" |
