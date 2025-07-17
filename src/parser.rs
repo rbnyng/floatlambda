@@ -2,6 +2,8 @@
 
 use crate::ast::Term;
 use crate::error::{ParseError, ParseErrorKind};
+use crate::ml;
+use crate::math;
 
 // --- The Parser ---
 pub struct Parser {
@@ -288,16 +290,19 @@ impl Parser {
 
     fn parse_identifier(&mut self) -> Result<Term, ParseError> {
         let name = self.parse_identifier_string()?;
+
+        if ml::get_ml_builtin_arity(&name).is_some() || math::get_math_builtin_arity(&name).is_some() {
+            return Ok(Term::Builtin(name));
+        }
+
         match name.as_str() {
             "neg" | "abs" | "sqrt" | "fuzzy_not" | "+" | "-" | "*" | "/" | "==" | "eq?" |
             "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "car" | "cdr" |
             "fuzzy_and" | "fuzzy_or" | "rem" | "div" |
             "print" | "read-char" | "read-line" |
             "length" | "map" | "filter" | "foldl" |
-            "diff" | "integrate" | "integrate3" |
-            "tensor" | "add_t" | "matmul" | "sigmoid_t" | "grad" |
-            "get_data" | "get_shape" | "get_grad"
-            => Ok(Term::Builtin(name)), 
+            "diff" | "integrate" | "integrate3"
+            => Ok(Term::Builtin(name)),
             _ => Ok(Term::Var(name)),
         }
     }

@@ -8,6 +8,7 @@ pub mod memory;
 pub mod parser;
 pub mod evaluator;
 pub mod ml; 
+pub mod math; 
 
 // --- Public API Re-exports ---
 // This makes the core components available to users of the library

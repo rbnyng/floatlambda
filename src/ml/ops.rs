@@ -5,7 +5,7 @@ use std::rc::Rc;
 use super::tensor::{Context, DifferentiableTensor};
 
 // --- Helper for transposing a matrix ---
-fn transpose(shape: &[usize], data: &[f64]) -> (Vec<usize>, Vec<f64>) {
+pub fn transpose(shape: &[usize], data: &[f64]) -> (Vec<usize>, Vec<f64>) {
     if shape.len() != 2 {
         panic!("Transpose only supported for 2D tensors (matrices)");
     }
@@ -116,6 +116,35 @@ pub fn sigmoid(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
     result
 }
 
+pub fn reshape(t: &DifferentiableTensor, new_shape_vec: Vec<usize>) -> DifferentiableTensor {
+    let original_len: usize = t.shape.iter().product();
+    let new_len: usize = new_shape_vec.iter().product();
+
+    if original_len != new_len {
+        panic!("Cannot reshape tensor of shape {:?} ({} elements) to {:?} ({} elements)",
+               t.shape, original_len, new_shape_vec, new_len);
+    }
+    
+    // Reshape is a zero-cost operation on the data, but we need to handle its gradient.
+    // For simplicity here, we'll implement it without a gradient context for now.
+    // A full implementation would need to track the reshape for the backward pass.
+    DifferentiableTensor::new(new_shape_vec, t.data.clone())
+}
+
+pub fn sum_t(t: &DifferentiableTensor) -> DifferentiableTensor {
+    let sum_val = t.data.iter().sum();
+    // The result is a scalar tensor.
+    DifferentiableTensor::new(vec![], vec![sum_val])
+}
+
+pub fn mean_t(t: &DifferentiableTensor) -> DifferentiableTensor {
+    let sum_val: f64 = t.data.iter().sum();
+    let count = t.data.len() as f64;
+    let mean_val = if count == 0.0 { 0.0 } else { sum_val / count };
+    // The result is a scalar tensor.
+    DifferentiableTensor::new(vec![], vec![mean_val])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +189,33 @@ mod tests {
         assert!((result.data[0] - 0.5).abs() < 1e-6);
         assert!((result.data[1] - 1.0).abs() < 1e-6);
         assert!(result.context.is_some());
+    }
+
+    #[test]
+    fn test_ops_reshape() {
+        let t = DifferentiableTensor::new(vec![2, 3], (1..=6).map(|x| x as f64).collect());
+        let reshaped = reshape(&t, vec![3, 2]);
+        assert_eq!(reshaped.shape, vec![3, 2]);
+        assert_eq!(reshaped.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_ops_reshape_bad_size() {
+        let t = DifferentiableTensor::new(vec![2, 3], vec![0.0; 6]);
+        reshape(&t, vec![4, 2]); // 6 elements vs 8
+    }
+    
+    #[test]
+    fn test_ops_sum_and_mean() {
+        let t = DifferentiableTensor::new(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]);
+        let sum_res = sum_t(&t);
+        let mean_res = mean_t(&t);
+
+        assert_eq!(sum_res.shape, vec![]);
+        assert_eq!(sum_res.data, vec![10.0]);
+
+        assert_eq!(mean_res.shape, vec![]);
+        assert_eq!(mean_res.data, vec![2.5]);
     }
 }
