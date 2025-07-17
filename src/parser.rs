@@ -294,7 +294,10 @@ impl Parser {
             "fuzzy_and" | "fuzzy_or" | "rem" | "div" |
             "print" | "read-char" | "read-line" |
             "length" | "map" | "filter" | "foldl" |
-            "diff" | "integrate" | "integrate3" => Ok(Term::Builtin(name)), 
+            "diff" | "integrate" | "integrate3" |
+            "tensor" | "add_t" | "matmul" | "sigmoid_t" | "grad" |
+            "get_data" | "get_shape" | "get_grad"
+            => Ok(Term::Builtin(name)), 
             _ => Ok(Term::Var(name)),
         }
     }

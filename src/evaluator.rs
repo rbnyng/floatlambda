@@ -9,6 +9,7 @@ use crate::memory::{
     Environment, Heap, Closure, BuiltinClosure, HeapObject,
     NIL_VALUE, encode_heap_pointer, decode_heap_pointer
 };
+use crate::ml::{self, DifferentiableTensor}; 
 
 /// A helper function to apply a FloatLambda function (represented by its f64 value)
 /// to an argument. This is used by Term::App and our new list built-ins.
@@ -47,6 +48,9 @@ pub fn apply_function(func_val: f64, arg_val: f64, heap: &mut Heap) -> Result<f6
             // Applying a pair is a type error.
             HeapObject::Pair(_, _) => {
                 Err(EvalError::TypeError(format!("Cannot apply a non-function value: Pair<{}>", id)))
+            }
+            HeapObject::Tensor(_) => {
+                Err(EvalError::TypeError(format!("Cannot apply a non-function value: Tensor<{}>", id)))
             }
             HeapObject::Free(_) => {
                 Err(EvalError::DanglingPointerError(id))
@@ -240,15 +244,90 @@ fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
         "neg" | "abs" | "sqrt" | "fuzzy_not" | "car" | "cdr" | "print" | "length" | "exp" => Ok(1),
         // Binary
         "+" | "-" | "*" | "/" | "==" | "eq?" | "<" | ">" | "<=" | ">=" | "min" | "max" |
-        "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" | "map" | "filter" | "diff" | "integrate" => Ok(2),
+        "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" | "map" | "filter" | "diff" | "integrate" |
+        "tensor" | "add_t" | "matmul" | "sigmoid_t" | "grad" // ML ops 
+        => Ok(2),
         // Ternary
         "foldl" | "integrate3" | "integrate_partial" => Ok(3),
         _ => Err(EvalError::TypeError(format!("Unknown builtin: {}", op))),
     }
 }
 
+fn list_to_vec(mut list_ptr: f64, heap: &Heap) -> Result<Vec<f64>, EvalError> {
+    let mut vec = Vec::new();
+    loop {
+        if list_ptr == NIL_VALUE { break; }
+        let (car, cdr) = if let Some(id) = decode_heap_pointer(list_ptr) {
+            if let Some(HeapObject::Pair(car, cdr)) = heap.get(id) { (*car, *cdr) } 
+            else { return Err(EvalError::TypeError("Expected a proper list.".to_string())); }
+        } else { return Err(EvalError::TypeError("Expected a proper list.".to_string())); };
+        vec.push(car);
+        list_ptr = cdr;
+    }
+    Ok(vec)
+}
+
+fn vec_to_list(vec: &[f64], heap: &mut Heap) -> f64 {
+    let mut list = NIL_VALUE;
+    for &val in vec.iter().rev() {
+        let new_pair = HeapObject::Pair(val, list);
+        let id = heap.register(new_pair);
+        list = encode_heap_pointer(id);
+    }
+    list
+}
+
 fn execute_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalError> {
     match op {
+        // --- ML BUILTINS ---
+        "tensor" => {
+            let shape_vec = list_to_vec(args[0], heap)?.iter().map(|&x| x as usize).collect();
+            let data_vec = list_to_vec(args[1], heap)?;
+            let tensor = DifferentiableTensor::new(shape_vec, data_vec);
+            let id = heap.register(HeapObject::Tensor(tensor));
+            Ok(encode_heap_pointer(id))
+        }
+        "add_t" => {
+            let id1 = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("add_t expects a tensor".to_string()))?;
+            let id2 = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("add_t expects a tensor".to_string()))?;
+            let (t1, t2) = (heap.get_tensor_mut(id1)?.clone(), heap.get_tensor_mut(id2)?.clone());
+            let res = ml::ops::add(id1, &t1, id2, &t2);
+            let id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(id))
+        }
+        "matmul" => {
+            let id1 = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("matmul expects a tensor".to_string()))?;
+            let id2 = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("matmul expects a tensor".to_string()))?;
+            let (t1, t2) = (heap.get_tensor_mut(id1)?.clone(), heap.get_tensor_mut(id2)?.clone());
+            let res = ml::ops::matmul(id1, &t1, id2, &t2);
+            let id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(id))
+        }
+        "sigmoid_t" => {
+            let id1 = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("sigmoid_t expects a tensor".to_string()))?;
+            let t1 = heap.get_tensor_mut(id1)?.clone();
+            let res = ml::ops::sigmoid(id1, &t1);
+            let id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(id))
+        }
+        "grad" => {
+            let func_ptr = args[0];
+            let input_tensor_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("grad expects a tensor as the second argument".to_string()))?;
+            let grad_tensor = ml::grad(func_ptr, input_tensor_id, heap)?;
+            let id = heap.register(HeapObject::Tensor(grad_tensor));
+            Ok(encode_heap_pointer(id))
+        }
+        "get_data" | "get_shape" | "get_grad" => {
+            let id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("This operation expects a tensor".to_string()))?;
+            let tensor = heap.get_tensor_mut(id)?;
+            let data_to_return = match op {
+                "get_data" => tensor.data.clone(),
+                "get_shape" => tensor.shape.iter().map(|&x| x as f64).collect(),
+                "get_grad" => tensor.grad.borrow().clone(),
+                _ => unreachable!(),
+            };
+            Ok(vec_to_list(&data_to_return, heap))
+        }
         // --- HIGHER-ORDER BUILTINS ---
         "length" => {
             let mut count = 0.0;

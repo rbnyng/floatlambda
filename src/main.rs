@@ -175,6 +175,7 @@ fn print_result(result: f64, heap: &Heap) {
             Some(HeapObject::UserFunc(_)) => "Function",
             Some(HeapObject::BuiltinFunc(_)) => "Builtin",
             Some(HeapObject::Pair(_, _)) => "Pair",
+            Some(HeapObject::Tensor(_)) => "Tensor",
             Some(HeapObject::Free(_)) => "FreeSlot",
             None => "Invalid",
         };

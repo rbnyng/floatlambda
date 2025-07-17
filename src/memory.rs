@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 use std::rc::Rc;
+
 use crate::ast::Term;
+use crate::ml::tensor::DifferentiableTensor;
+use crate::error::EvalError;
 
 // --- Core Data Structures ---
 pub const NIL_VALUE: f64 = f64::NEG_INFINITY;
@@ -28,6 +31,7 @@ pub enum HeapObject {
     UserFunc(Closure),
     BuiltinFunc(BuiltinClosure),
     Pair(f64, f64), // The classic "cons cell" for building lists.
+    Tensor(DifferentiableTensor), 
     Free(u64), // Points to the next free slot
 }
 
@@ -40,6 +44,16 @@ pub struct Heap {
 impl Heap {
     pub fn get_mut(&mut self, id: u64) -> Option<&mut HeapObject> {
         self.objects.get_mut(id as usize).and_then(|f| f.as_mut())
+    }
+
+    // Helper to get a mutable tensor, returning a proper error
+    pub fn get_tensor_mut(&mut self, id: u64) -> Result<&mut DifferentiableTensor, EvalError> {
+        self.get_mut(id)
+            .and_then(|obj| match obj {
+                HeapObject::Tensor(t) => Some(t),
+                _ => None,
+            })
+            .ok_or_else(|| EvalError::TypeError(format!("Expected a tensor, but heap ID {} is not a tensor.", id)))
     }
 
     pub fn new() -> Self {
@@ -103,8 +117,19 @@ impl Heap {
                             worklist.push(cdr_id);
                         }
                     }
-                    HeapObject::BuiltinFunc(_) => {
-                        // Builtins don't hold references to other heap objects.
+                    HeapObject::BuiltinFunc(closure) => { // Trace through partially applied builtins
+                        for arg in &closure.args {
+                            if let Some(child_id) = decode_heap_pointer(*arg) {
+                                worklist.push(child_id);
+                            }
+                        }
+                    }
+                    HeapObject::Tensor(tensor) => {
+                        if let Some(ctx) = &tensor.context {
+                            for &parent_id in &ctx.parents {
+                                worklist.push(parent_id);
+                            }
+                        }
                     }
                     HeapObject::Free(_) => {
                         

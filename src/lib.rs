@@ -7,6 +7,7 @@ pub mod error;
 pub mod memory;
 pub mod parser;
 pub mod evaluator;
+pub mod ml; 
 
 // --- Public API Re-exports ---
 // This makes the core components available to users of the library
