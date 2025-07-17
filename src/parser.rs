@@ -293,7 +293,8 @@ impl Parser {
             "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "car" | "cdr" |
             "fuzzy_and" | "fuzzy_or" | "rem" | "div" |
             "print" | "read-char" | "read-line" |
-            "length" | "map" | "filter" | "foldl" => Ok(Term::Builtin(name)), 
+            "length" | "map" | "filter" | "foldl" |
+            "diff" | "integrate" | "integrate3" => Ok(Term::Builtin(name)), 
             _ => Ok(Term::Var(name)),
         }
     }

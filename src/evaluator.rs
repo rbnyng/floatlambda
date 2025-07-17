@@ -13,23 +13,33 @@ use crate::memory::{
 /// A helper function to apply a FloatLambda function (represented by its f64 value)
 /// to an argument. This is used by Term::App and our new list built-ins.
 pub fn apply_function(func_val: f64, arg_val: f64, heap: &mut Heap) -> Result<f64, EvalError> {
+
+    // println!("apply_function called with func_val={}, arg_val={}", func_val, arg_val);
+
     if let Some(id) = decode_heap_pointer(func_val) {
+        // println!("Applying heap object ID {}", id);
         // Clone the object to avoid mutable borrow conflicts with the heap.
         let heap_obj = heap.get(id).cloned().ok_or(EvalError::DanglingPointerError(id))?;
 
         match heap_obj {
             HeapObject::UserFunc(closure) => {
+                // println!("Applying UserFunc");
                 let mut new_env_map = closure.env.as_ref().clone(); 
                 new_env_map.insert(closure.param, arg_val);
                 closure.body.eval(&Rc::new(new_env_map), heap)
             }
 
             HeapObject::BuiltinFunc(mut closure) => {
+                // println!("Applying BuiltinFunc: op={}, current_args={:?}, arity={}", 
+                // closure.op, closure.args, closure.arity);
+
                 closure.args.push(arg_val);
                 if closure.args.len() == closure.arity {
                     // Pass the heap to builtins that might need it (like cons).
+                    // println!("Executing builtin {} with args {:?}", closure.op, closure.args);
                     execute_builtin(&closure.op, &closure.args, heap)
                 } else {
+                    // println!("Creating partial application");
                     let new_id = heap.register(HeapObject::BuiltinFunc(closure));
                     Ok(encode_heap_pointer(new_id))
                 }
@@ -176,6 +186,51 @@ impl Term {
     }
 }
 
+// Calculus helpers
+fn numerical_derivative(func: f64, x: f64, heap: &mut Heap) -> Result<f64, EvalError> {
+    let h = 1e-6; // Small step size
+    
+    // f'(x) ≈ (-f(x+2h) + 8f(x+h) - 8f(x-h) + f(x-2h)) / (12h)
+    let f_2h = apply_function(func, x + 2.0*h, heap)?;
+    let f_h = apply_function(func, x + h, heap)?;
+    let f_minus_h = apply_function(func, x - h, heap)?;
+    let f_minus_2h = apply_function(func, x - 2.0*h, heap)?;
+    
+    Ok((-f_2h + 8.0*f_h - 8.0*f_minus_h + f_minus_2h) / (12.0 * h))
+}
+
+fn numerical_integration(func: f64, a: f64, b: f64, heap: &mut Heap) -> Result<f64, EvalError> {
+    // println!("numerical_integration: func={}, a={}, b={}", func, a, b);
+    
+    let n = 1000;
+    let h = (b - a) / n as f64;
+    let mut sum = 0.0;
+    
+    for i in 0..=n {
+        let x = a + i as f64 * h;
+        let weight = if i == 0 || i == n {
+            1.0
+        } else if i % 2 == 1 {
+            4.0
+        } else {
+            2.0
+        };
+        
+        let fx = apply_function(func, x, heap)?;
+        
+        if fx.is_nan() {
+            println!("Function returned NaN at x={}", x);
+            return Ok(f64::NAN);
+        }
+        
+        sum += weight * fx;
+    }
+    
+    let result = sum * h / 3.0;
+    // println!("Integration result: {}", result);
+    Ok(result)
+}
+
 // --- Builtin Logic Helpers ---
 fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
     match op {
@@ -185,9 +240,9 @@ fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
         "neg" | "abs" | "sqrt" | "fuzzy_not" | "car" | "cdr" | "print" | "length" => Ok(1),
         // Binary
         "+" | "-" | "*" | "/" | "==" | "eq?" | "<" | ">" | "<=" | ">=" | "min" | "max" |
-        "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" | "map" | "filter" => Ok(2),
+        "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" | "map" | "filter" | "diff" | "integrate" => Ok(2),
         // Ternary
-        "foldl" => Ok(3),
+        "foldl" | "integrate3" | "integrate_partial" => Ok(3),
         _ => Err(EvalError::TypeError(format!("Unknown builtin: {}", op))),
     }
 }
@@ -301,6 +356,45 @@ fn execute_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalE
                 acc = apply_function(partial_app, car, heap)?;
                 current_list = cdr;
             }
+        }
+
+        // Calculus
+        "diff" => {
+            let func = args[0];
+            let point = args[1];
+            numerical_derivative(func, point, heap)
+        }
+        "integrate3" => {
+            let func = args[0];
+            let a = args[1];
+            let b = args[2];
+            numerical_integration(func, a, b, heap)
+        }
+        "integrate" => {
+            let func = args[0];
+            let a = args[1];
+            let integration_closure = BuiltinClosure {
+                op: "integrate_partial".to_string(),
+                arity: 3,
+                args: vec![func, a],
+            };
+            let id = heap.register(HeapObject::BuiltinFunc(integration_closure));
+            Ok(encode_heap_pointer(id))
+        }
+        "integrate_partial" => {
+            let func = args[0];  // f
+            let a = args[1];     // a  
+            let b = args[2];     // b
+            // Test if the function works before passing to numerical_integration
+            println!("Testing function call with x=1.0:");
+            match apply_function(func, 1.0, heap) {
+                Ok(val) => println!("f(1.0) = {}", val),
+                Err(e) => println!("ERROR calling f(1.0): {}", e),
+            }
+            
+            let result = numerical_integration(func, a, b, heap);
+            println!("numerical_integration returned: {:?}", result);
+            result
         }
 
         // Standard arithmetic/logic (no heap access)

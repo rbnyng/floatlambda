@@ -126,6 +126,49 @@ The `print` function uses fractional parts as rendering probabilities:
 (print (cons 65.7 nil))               # 70% chance of 'B', 30% chance of 'A'
 ```
 
+## Automatic Differentiation
+
+Since everything is an f64, every operation is automatically differentiable. FloatLambda provides built-in calculus operations:
+
+### Derivatives
+```
+# Derivative of x² at x=5 (should be 10)
+let f = λx.(* x x) in
+(diff f 5.0)                           # → 10.0
+
+# Derivative of sin approximation
+let sin_approx = λx.(- x (/ (* x (* x x)) 6)) in
+(diff sin_approx 0.0)                 # → ~1.0 (cos(0))
+```
+
+### Integration
+```
+# Definite integral of x² from 0 to 3 (should be 9)
+let f = λx.(* x x) in
+(integrate3 f 0.0 3.0)                # → 9.0
+
+# Curried integration for reuse
+let integrate_from_zero = (integrate f 0.0) in
+let area1 = (integrate_from_zero 2.0) in
+let area2 = (integrate_from_zero 4.0) in
+(- area2 area1)                       # Area between x=2 and x=4
+```
+
+### Fundamental Theorem of Calculus
+```
+# Verify that differentiation and integration are inverses
+let f = λx.(* x x) in
+let F = λx.(integrate3 f 0.0 x) in    # Antiderivative
+(diff F 5.0)                          # Should equal f(5) = 25.0
+```
+
+### (Kind of) Zero-Overhead Autodiff
+Unlike autodiff libraries that box values in special tensor types, FloatLambda gets differentiation for free because:
+- Every value is already numeric
+- Every operation is already differentiable  
+- Function composition follows the chain rule automatically
+- No type system overhead or special data structures needed
+
 ## Example Programs
 
 ### Factorial
@@ -176,6 +219,11 @@ if confidence then safe_action else risky_action    # → 28.0
 - `<`, `>`, `<=`, `>=` - Numeric comparisons (return 1.0 or 0.0)
 - `==` - Fuzzy equality (returns similarity score)
 - `eq?` - Strict equality (exact bit-wise comparison)
+
+### Calculus
+- `diff` - Numerical differentiation: `(diff f x)` computes f'(x)
+- `integrate` - Curried integration: `((integrate f a) b)` computes ∫ₐᵇ f(x)dx  
+- `integrate3` - Direct integration: `(integrate3 f a b)` computes ∫ₐᵇ f(x)dx
 
 ### Logic
 - `fuzzy_and`, `fuzzy_or`, `fuzzy_not` - Continuous logic operations

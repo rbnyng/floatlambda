@@ -16,7 +16,6 @@ pub use error::{EvalError, ParseError};
 pub use memory::{Heap, NIL_VALUE};
 pub use parser::parse;
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,6 +542,153 @@ mod tests {
         fn is_type_error(&self) -> bool { matches!(self, EvalError::TypeError(_)) }
     }
 
-
+    #[test]
+    fn test_basic_derivatives() {
+        // Derivative of constant function should be 0
+        let code = "(diff (λx.5.0) 10.0)";
+        let result = eval_ok(code);
+        assert!(result.abs() < 0.001, "d/dx(5) should be ~0, got {}", result);
+        
+        // Derivative of identity function should be 1
+        let code = "(diff (λx.x) 42.0)";
+        let result = eval_ok(code);
+        assert!((result - 1.0).abs() < 0.001, "d/dx(x) should be ~1, got {}", result);
+        
+        // Derivative of x² at x=5 should be 10
+        let code = "(diff (λx.((* x) x)) 5.0)";
+        let result = eval_ok(code);
+        assert!((result - 10.0).abs() < 0.01, "d/dx(x²) at x=5 should be ~10, got {}", result);
+        
+        // Derivative of x³ at x=2 should be 12
+        let code = "(diff (λx.((* x) ((* x) x))) 2.0)";
+        let result = eval_ok(code);
+        assert!((result - 12.0).abs() < 0.01, "d/dx(x³) at x=2 should be ~12, got {}", result);
+    }
     
+    #[test]
+    fn test_basic_integrals() {
+        // Integral of constant 1 from 0 to 5 should be 5
+        let code = "(integrate3 (λx.1.0) 0.0 5.0)";
+        let result = eval_ok(code);
+        assert!((result - 5.0).abs() < 0.01, "∫₀⁵ 1 dx should be ~5, got {}", result);
+        
+        // Integral of x from 0 to 2 should be 2 (x²/2 from 0 to 2 = 4/2 - 0 = 2)
+        let code = "(integrate3 (λx.x) 0.0 2.0)";
+        let result = eval_ok(code);
+        assert!((result - 2.0).abs() < 0.01, "∫₀² x dx should be ~2, got {}", result);
+        
+        // Integral of x² from 0 to 3 should be 9 (x³/3 from 0 to 3 = 27/3 - 0 = 9)
+        let code = "(integrate3 (λx.((* x) x)) 0.0 3.0)";
+        let result = eval_ok(code);
+        assert!((result - 9.0).abs() < 0.1, "∫₀³ x² dx should be ~9, got {}", result);
+    }
+    
+    #[test]
+    fn test_fundamental_theorem_of_calculus() {
+        // F(x) = ∫₀ˣ t² dt, then F'(x) should equal x²
+        let code = "
+            let f = (λx.((* x) x)) in
+            let F = (λx.(integrate3 f 0.0 x)) in
+            let x = 3.0 in
+            let derivative_of_F = (diff F x) in
+            let original_f = (f x) in
+            ((- derivative_of_F) original_f)
+        ";
+        let difference = eval_ok(code);
+        assert!(difference.abs() < 0.1, "Fundamental theorem violation: |F'(x) - f(x)| = {}", difference);
+    }
+    
+    #[test]
+    fn test_simple_curried_integration() {
+        // Test with a builtin function first
+        let code = "
+            let integrator = (integrate (+ 0) 0.0) in  # f(x) = x
+            (integrator 2.0)
+        ";
+        let result = eval_ok(code);
+        println!("Simple curried result: {}", result);
+    }
+    
+    #[test]
+    fn test_curried_integration() {
+        // Test the 2-argument curried integrate
+        let code = "
+            let f = (λx.((* x) x)) in
+            let integrator = (integrate f 0.0) in
+            (integrator 3.0)
+        ";
+        let result = eval_ok(code);
+        assert!((result - 9.0).abs() < 0.1, "Curried integration should give ~9, got {}", result);
+        
+        // Test partial application usefulness
+        let code = "
+            let integrate_x_squared_from_zero = (integrate (λx.((* x) x)) 0.0) in
+            let area1 = (integrate_x_squared_from_zero 2.0) in
+            let area2 = (integrate_x_squared_from_zero 3.0) in
+            ((- area2) area1)
+        ";
+        let result = eval_ok(code);
+        // area2 = 9, area1 = 8/3 ≈ 2.67, difference ≈ 6.33
+        assert!((result - (9.0 - 8.0/3.0)).abs() < 0.1, "Partial integration difference should be ~6.33, got {}", result);
+    }
+    
+    #[test]
+    fn test_higher_order_calculus() {
+        // Second derivative: f''(x) = d/dx(d/dx(f(x)))
+        let code = "
+            let f = (λx.((* x) ((* x) x))) in  # f(x) = x³
+            let f_prime = (λx.(diff f x)) in   # f'(x)
+            (diff f_prime 2.0)                # f''(2)
+        ";
+        let result = eval_ok(code);
+        // f(x) = x³, f'(x) = 3x², f''(x) = 6x, f''(2) = 12
+        assert!((result - 12.0).abs() < 0.1, "Second derivative of x³ at x=2 should be ~12, got {}", result);
+    }
+    
+    #[test]
+    fn test_calculus_with_fuzzy_functions() {
+        // Test differentiation/integration with fuzzy conditional functions
+        let code = "
+            let fuzzy_step = (λx.if (> x 0.0) then 1.0 else 0.0) in
+            (diff fuzzy_step 0.0)
+        ";
+        let result = eval_ok(code);
+        // At x=0, the fuzzy step function should have some finite derivative
+        // (unlike a true step function which would be infinite)
+        assert!(result.is_finite(), "Derivative of fuzzy step should be finite, got {}", result);
+    }
+    
+    #[test]
+    fn test_calculus_edge_cases() {
+        // Test with functions that have zeros
+        let code = "(integrate3 (λx.0.0) -5.0 5.0)";
+        let result = eval_ok(code);
+        assert!(result.abs() < 0.001, "Integral of zero function should be ~0, got {}", result);
+        
+        // Test with negative intervals
+        let code = "(integrate3 (λx.x) 2.0 0.0)";
+        let result = eval_ok(code);
+        let expected = -2.0; // Should be negative of forward integral
+        assert!((result - expected).abs() < 0.01, "Backwards integral should be ~{}, got {}", expected, result);
+        
+        // Test derivative at a point where function is not smooth
+        let code = "(diff (abs) 0.0)";
+        let result = eval_ok(code);
+        // abs(x) is not differentiable at 0, but numerical diff should give something reasonable
+        assert!(result.is_finite(), "Derivative of |x| at 0 should be finite (numerical), got {}", result);
+    }
+    
+    #[test]
+    fn test_calculus_composition() {
+        // Chain rule: d/dx(f(g(x))) should work through numerical differentiation
+        let code = "
+            let f = (λx.((* x) x)) in      # f(x) = x²
+            let g = (λx.((+ x) 1.0)) in    # g(x) = x + 1
+            let composite = (λx.(f (g x))) in  # f(g(x)) = (x+1)²
+            (diff composite 2.0)
+        ";
+        let result = eval_ok(code);
+        // f(g(x)) = (x+1)², f'(g(x)) = 2(x+1), at x=2: f'(g(2)) = 2(3) = 6
+        assert!((result - 6.0).abs() < 0.1, "Chain rule result should be ~6, got {}", result);
+    }    
 }
