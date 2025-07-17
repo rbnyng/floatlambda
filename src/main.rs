@@ -132,7 +132,7 @@ fn show_examples() {
         ("Creating a list", "(cons 1 (cons 2 (cons 3 nil)))"),
         ("Accessing list elements", "let mylist = (cons 10 (cons 20 nil)) in (car (cdr mylist))"),
         ("List of functions", "let mylist = (cons (+ 1) (cons (* 2) nil)) in ((car mylist) 99)"),
-        ("Higher-order map function", "let rec map = (λf.λl.if (== l nil) then nil else (cons (f (car l)) (map f (cdr l)))) in let l = (cons 1 (cons 2 nil)) in (car (map (+ 10) l))"),
+        ("Higher-order map function", "let rec map = (λf.λl.if (eq? l nil) then nil else (cons (f (car l)) (map f (cdr l)))) in let l = (cons 1 (cons 2 nil)) in (car (map (+ 10) l))"),
     ];
 
     for (description, code) in examples.iter() {
@@ -386,7 +386,7 @@ fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
         // Unary
         "neg" | "abs" | "sqrt" | "fuzzy_not" | "car" | "cdr" => Ok(1),
         // Binary
-        "+" | "-" | "*" | "/" | "==" | "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" => Ok(2),
+        "+" | "-" | "*" | "/" | "==" | "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" | "eq?" => Ok(2),
         _ => Err(EvalError::TypeError(format!("Unknown builtin: {}", op))),
     }
 }
@@ -412,8 +412,7 @@ fn execute_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalE
         "fuzzy_or" => Ok(args[0] + args[1] - (args[0] * args[1])),
         "div" => Ok((args[0] / args[1]).floor()),
         "rem" => Ok(args[0] % args[1]),
-        // == is special: it can compare heap pointers, numbers, and nil
-        "==" => {
+        "eq?" => {
             let p1 = decode_heap_pointer(args[0]);
             let p2 = decode_heap_pointer(args[1]);
             if p1.is_some() || p2.is_some() {
@@ -428,7 +427,11 @@ fn execute_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalE
                 Ok(fuzzy_eq(args[0], args[1]))
             }
         },
-
+        // '==' is always fuzzy. Note this will produce NaN for pointers/nil.
+        "==" => {
+            Ok(fuzzy_eq(args[0], args[1]))
+        },
+         
         // --- List primitives that interact with the heap ---
         "cons" => {
             let obj = HeapObject::Pair(args[0], args[1]);
@@ -765,7 +768,7 @@ impl Parser {
         let name = self.parse_identifier_string()?;
         match name.as_str() {
             "neg" | "abs" | "sqrt" | "fuzzy_not" | "+" | "-" | "*" | "/" | "==" |
-            "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "car" | "cdr" |
+            "<" | ">" | "<=" | ">=" | "min" | "max" | "cons" | "car" | "cdr" | "eq?" |
             "fuzzy_and" | "fuzzy_or" | "rem" | "div" => Ok(Term::Builtin(name)),
             _ => Ok(Term::Var(name)),
         }
@@ -790,7 +793,7 @@ impl Parser {
             }
         }
         while let Some(c) = self.current_char() {
-            if c.is_alphanumeric() || c == '_' {
+            if c.is_alphanumeric() || c == '_' || c == '?' {
                 name.push(c);
                 self.advance();
             } else {
@@ -1222,7 +1225,7 @@ mod tests {
 
     #[test]
     fn test_higher_order_map() {
-        let map_code = "let rec map = (λf.λl.if (== l nil) then nil else (cons (f (car l)) (map f (cdr l))))";
+        let map_code = "let rec map = (λf.λl.if (eq? l nil) then nil else (cons (f (car l)) (map f (cdr l))))";
         let list_code = "let mylist = (cons 10 (cons 20 (cons 30 nil)))";
         let add5 = "(λx.(+ x 5))";
         
@@ -1236,7 +1239,7 @@ mod tests {
     #[test]
     fn test_higher_order_filter() {
         let filter_code = "let rec filter = (λp.λl.
-            if (== l nil) then nil 
+            if (eq? l nil) then nil 
             else (
                 let head = (car l) in
                 let tail = (cdr l) in
@@ -1257,7 +1260,7 @@ mod tests {
     #[test]
     fn test_higher_order_fold_left_aka_reduce() {
         let fold_code = "let rec fold = (λf.λacc.λl.
-            if (== l nil) then acc 
+            if (eq? l nil) then acc 
             else (
                 fold f (f acc (car l)) (cdr l)
             ))";
