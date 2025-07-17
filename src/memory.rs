@@ -1,0 +1,158 @@
+// src/memory.rs
+
+use std::collections::HashMap;
+use std::rc::Rc;
+use crate::ast::Term;
+
+// --- Core Data Structures ---
+pub const NIL_VALUE: f64 = f64::NEG_INFINITY;
+
+pub type Environment = Rc<HashMap<String, f64>>;
+
+#[derive(Debug, Clone)]
+pub struct Closure {
+    pub param: String,
+    pub body: Box<Term>,
+    pub env: Environment,
+}
+
+#[derive(Debug, Clone)]
+pub struct BuiltinClosure {
+    pub op: String,
+    pub arity: usize,
+    pub args: Vec<f64>,
+}
+
+#[derive(Debug, Clone)]
+pub enum HeapObject {
+    UserFunc(Closure),
+    BuiltinFunc(BuiltinClosure),
+    Pair(f64, f64), // The classic "cons cell" for building lists.
+    Free(u64), // Points to the next free slot
+}
+
+// A central table to store all living heap-allocated objects.
+pub struct Heap {
+    objects: Vec<Option<HeapObject>>,
+    free_list_head: Option<u64>,
+}
+
+impl Heap {
+    pub fn get_mut(&mut self, id: u64) -> Option<&mut HeapObject> {
+        self.objects.get_mut(id as usize).and_then(|f| f.as_mut())
+    }
+
+    pub fn new() -> Self {
+        Self { objects: Vec::new(), free_list_head: None }
+    }
+
+    pub fn register(&mut self, obj: HeapObject) -> u64 {
+        if let Some(free_index) = self.free_list_head {
+            // Pop the head of the free list
+            let next_free = self.objects[free_index as usize].take();
+            self.free_list_head = if let Some(HeapObject::Free(next)) = next_free {
+                Some(next)
+            } else {
+                None // Should not happen in a correct implementation
+            };
+            
+            // Place the new object in the reclaimed slot
+            self.objects[free_index as usize] = Some(obj);
+            return free_index;
+        }
+
+        // If the free list is empty, fall back to the old method
+        self.objects.push(Some(obj));
+        (self.objects.len() - 1) as u64
+    }
+
+    pub fn get(&self, id: u64) -> Option<&HeapObject> {
+        self.objects.get(id as usize).and_then(|f| f.as_ref())
+    }
+
+    // The garbage collector
+    pub fn collect(&mut self, roots: &[f64]) {
+        let mut marked = vec![false; self.objects.len()];
+        let mut worklist: Vec<u64> = roots
+            .iter()
+            .filter_map(|val| decode_heap_pointer(*val))
+            .collect();
+        
+        while let Some(id) = worklist.pop() {
+            if id as usize >= marked.len() || marked[id as usize] {
+                continue;
+            }
+            marked[id as usize] = true;
+
+            // The GC must trace through all heap object types.
+            if let Some(obj) = self.get(id) {
+                match obj {
+                    HeapObject::UserFunc(closure) => {
+                        // A closure is a root for objects in its environment.
+                        for val in closure.env.values() {
+                            if let Some(child_id) = decode_heap_pointer(*val) {
+                                worklist.push(child_id);
+                            }
+                        }
+                    }
+                    HeapObject::Pair(car, cdr) => {
+                        // A pair is a root for the objects in its car and cdr.
+                        if let Some(car_id) = decode_heap_pointer(*car) {
+                            worklist.push(car_id);
+                        }
+                        if let Some(cdr_id) = decode_heap_pointer(*cdr) {
+                            worklist.push(cdr_id);
+                        }
+                    }
+                    HeapObject::BuiltinFunc(_) => {
+                        // Builtins don't hold references to other heap objects.
+                    }
+                    HeapObject::Free(_) => {
+                        
+                    }
+                }
+            }
+        }
+
+        // --- Sweep Phase ---
+        self.free_list_head = None; // Reset the free list
+        for i in (0..self.objects.len()).rev() { // Iterate backwards
+            if !marked[i] {
+                // This object is garbage, add it to the free list.
+                let next_free = self.free_list_head.unwrap_or(u64::MAX); // Use a sentinel
+                self.objects[i] = Some(HeapObject::Free(next_free));
+                self.free_list_head = Some(i as u64);
+            }
+        }
+    }
+
+    // Helper for debugging in the REPL
+    pub fn alive_count(&self) -> usize {
+        self.objects
+            .iter()
+            .filter(|o| match o {
+                // Free slots and empty slots are not "alive"
+                Some(HeapObject::Free(_)) | None => false,
+                // Any other Some(...) variant is alive
+                Some(_) => true,
+            })
+            .count()
+    }
+}
+
+// --- NaN-Boxing Crazy Town ---
+
+const QNAN: u64 = 0x7ff8000000000000;
+const PAYLOAD_MASK: u64 = 0x0000ffffffffffff;
+
+pub fn encode_heap_pointer(id: u64) -> f64 {
+    f64::from_bits(QNAN | id)
+}
+
+pub fn decode_heap_pointer(val: f64) -> Option<u64> {
+    if (val.to_bits() & 0x7ff8000000000000) == QNAN {
+        Some(val.to_bits() & PAYLOAD_MASK)
+    } else {
+        None
+    }
+}

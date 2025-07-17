@@ -1,5 +1,5 @@
 [package]
-name = "lambdafloat"
+name = "float_lambda"
 version = "0.1.0"
 edition = "2021"
 
