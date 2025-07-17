@@ -27,7 +27,7 @@ mod tests {
     fn eval_ok(input: &str) -> f64 {
         let term = parse(input).unwrap();
         let mut heap = Heap::new();
-        // The evaluator is now part of the Term struct in the `evaluator` module.
+        // The evaluator is now part of the Term struct in the evaluator module.
         term.eval(&Rc::new(HashMap::new()), &mut heap).unwrap()
     }
 
@@ -378,14 +378,6 @@ mod tests {
         let list_val = term.eval(&eval_env, &mut heap).unwrap();
         
         // Before GC, 100 cons calls = 100 pairs.
-        // Wait, the original test says 300, why? Let's analyze `process_input` again.
-        // It's not `process_input` that causes this, it must be the evaluation itself.
-        // `(cons 0 nil)` -> creates 1 pair, 1 builtin closure for cons.
-        // `(cons 1 (cons 0 nil))` -> creates another pair and another builtin closure.
-        // `((+ 1) 2)` creates a `BuiltinFunc` for `+` and another for `(+ 1)`.
-        // OK, the original test's assertion count of 300 is likely due to temporary BuiltinClosure
-        // objects being created for each application step.
-        // Let's check `heap.alive_count()` before any GC.
         let initial_count = heap.alive_count();
         assert!(initial_count > 100); // It will be more than just the pairs.
 
@@ -406,7 +398,7 @@ mod tests {
         let list_val = list_term.eval(&env, &mut heap).unwrap();
 
         // 2. Run the GC with the list head as the root. This cleans up temporary objects
-        // created during evaluation (like intermediate `cons` builtin closures).
+        // created during evaluation (like intermediate cons builtin closures).
         heap.collect(&[list_val]);
         assert_eq!(heap.alive_count(), 3); // 3 pairs in the list.
 
@@ -419,7 +411,7 @@ mod tests {
         let cdr_term = parse("(cdr list)").unwrap();
         let tail_val = cdr_term.eval(&next_env, &mut heap).unwrap();
 
-        // After this eval, we might have a temporary `BuiltinFunc` for `cdr`.
+        // After this eval, we might have a temporary BuiltinFunc for cdr.
         // Let's check alive_count before the final GC. It should be > 3.
         let count_before_final_gc = heap.alive_count();
         assert!(count_before_final_gc >= 3); 
@@ -427,8 +419,8 @@ mod tests {
         // 5. Now, collect garbage, only keeping the tail rooted.
         heap.collect(&[tail_val]);
         
-        // The head of the list `(cons 1 ...)` is no longer rooted and should be collected.
-        // The tail `(cons 2 (cons 3 nil))` consists of 2 pairs, which should remain.
+        // The head of the list (cons 1 ...) is no longer rooted and should be collected.
+        // The tail (cons 2 (cons 3 nil)) consists of 2 pairs, which should remain.
         assert_eq!(heap.alive_count(), 2);
     }
 
