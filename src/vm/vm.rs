@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject, NIL_VALUE};
-use crate::vm::compiler::{compile, CompileError};
-use crate::vm::function::Function;
+use crate::vm::compiler::CompileError;
 use crate::vm::opcode::OpCode;
 
 #[derive(Debug)]
@@ -32,14 +31,8 @@ pub struct VM<'a> {
 
 /// The main entry point to run code. It handles parsing, compiling, and execution.
 pub fn interpret(source: &str, heap: &mut Heap) -> Result<f64, InterpretError> {
-    let term = crate::parser::parse(source)
-        .map_err(|_| InterpretError::Compile(CompileError::UnsupportedExpression("Parse Error".to_string())))?; // Basic error mapping for now
-    let main_chunk = compile(&term).map_err(InterpretError::Compile)?;
-    let main_func = Function {
-        arity: 0,
-        chunk: main_chunk,
-        name: "<script>".to_string(),
-    };
+    let term = crate::parser::parse(source).map_err(|_| InterpretError::Compile(CompileError::ParseError))?;
+    let main_func = crate::vm::compile(&term, heap).map_err(InterpretError::Compile)?;
 
     let main_id = heap.register(HeapObject::Function(main_func));
     let mut vm = VM::new(heap);
@@ -169,7 +162,29 @@ impl<'a> VM<'a> {
                             self.frames.last_mut().unwrap().ip += offset;
                         }
                     }
+                }
+                OpCode::OpPop => {
                     self.pop_stack()?;
+                }
+                OpCode::OpGetLocal => {
+                    let slot = self.read_byte() as usize;
+                    let frame = self.frames.last().unwrap();
+                    // Get the value from the stack at an index relative to the current function's start.
+                    let val = self.stack[frame.stack_slot + slot];
+                    self.stack.push(val);
+                }
+                OpCode::OpSetLocal => {
+                    let slot = self.read_byte() as usize;
+                    let frame = self.frames.last().unwrap();
+                    // Peek the value from the top of the stack and set it in the slot.
+                    // This doesn't pop, as assignment can be an expression.
+                    self.stack[frame.stack_slot + slot] = *self.stack.last().unwrap();
+                }
+                OpCode::OpCall => {
+                    let arg_count = self.read_byte() as usize;
+                    // The function to call is on the stack, just below the arguments.
+                    let func_to_call_val = self.stack[self.stack.len() - 1 - arg_count];
+                    self.call_value(func_to_call_val, arg_count)?;
                 }
                 _ => return Err(InterpretError::Runtime(format!("Unimplemented opcode {:?}", op))),
             }

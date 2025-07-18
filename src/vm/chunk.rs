@@ -14,13 +14,6 @@ pub struct Chunk {
     pub names: Vec<String>, 
 }
 
-#[derive(Debug, Default)]
-pub struct Function {
-    pub arity: usize, // Number of parameters
-    pub chunk: Chunk,
-    pub name: String,
-}
-
 impl Chunk {
     /// Creates a new, empty chunk.
     pub fn new() -> Self {

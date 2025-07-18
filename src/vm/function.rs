@@ -1,6 +1,6 @@
 use crate::vm::chunk::Chunk;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Function {
     pub arity: usize, // Number of parameters the function expects.
     pub chunk: Chunk,

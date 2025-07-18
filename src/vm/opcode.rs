@@ -14,7 +14,9 @@ pub enum OpCode {
     OpTrue,
     /// Pushes 0.0 (false) onto the stack.
     OpFalse,
-
+    /// Pops the top value from the stack.
+    OpPop,
+    
     // --- Unary Operations ---
     /// Negates the top value on the stack.
     OpNegate,
@@ -40,6 +42,12 @@ pub enum OpCode {
     OpGetGlobal,
     /// Sets the value of an existing global variable.
     OpSetGlobal, // We won't implement this yet, but it's good to define.
+    // --- Local Variable Opcodes ---
+    OpGetLocal,
+    OpSetLocal,
+
+    // --- Functions ---
+    OpCall,
     
     // --- Jumps ---
     /// Unconditionally jumps forward by a 16-bit offset.
