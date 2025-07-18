@@ -9,6 +9,7 @@ pub mod parser;
 pub mod evaluator;
 pub mod ml; 
 pub mod math; 
+pub mod vm;
 
 // --- Public API Re-exports ---
 // This makes the core components available to users of the library
@@ -271,7 +272,7 @@ mod tests {
         // 0.99014 * 20.0 + (1.0 - 0.99014) * 10.0 = 19.8028 + 0.0986 = 19.9014
         assert!((result - 19.9014).abs() < 0.0001);
     }
-    
+
     // --- Complex Data Structures ---
 
     #[test]

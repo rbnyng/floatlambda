@@ -1,0 +1,121 @@
+// src/vm/compiler.rs
+
+use crate::ast::Term;
+use crate::vm::chunk::Chunk;
+use crate::vm::opcode::OpCode;
+
+// A simple error type for compilation problems.
+#[derive(Debug)]
+pub enum CompileError {
+    UnsupportedExpression(String),
+    TooManyConstants,
+}
+
+/// The main compilation function. It creates a Compiler and runs it.
+pub fn compile(term: &Term) -> Result<Chunk, CompileError> {
+    let mut compiler = Compiler::new();
+    compiler.compile_term(term)?;
+    // Every script should end by returning its final value.
+    compiler.chunk.write_opcode(OpCode::OpReturn, 0); // Assuming line 0 for now
+    Ok(compiler.chunk)
+}
+
+/// Manages the state of the compilation process.
+struct Compiler {
+    chunk: Chunk,
+}
+
+impl Compiler {
+    fn new() -> Self {
+        Compiler {
+            chunk: Chunk::new(),
+        }
+    }
+
+    /// The main recursive function to walk the AST and emit bytecode.
+    fn compile_term(&mut self, term: &Term) -> Result<(), CompileError> {
+        // We'll need the line number eventually, for now we pass 0.
+        let line = 0;
+
+        match term {
+            Term::Float(n) => {
+                let const_idx = self.chunk.add_constant(*n);
+                if const_idx > u8::MAX as usize {
+                    return Err(CompileError::TooManyConstants);
+                }
+                self.chunk.write_opcode(OpCode::OpConstant, line);
+                self.chunk.write(const_idx as u8, line);
+            }
+            Term::Nil => {
+                self.chunk.write_opcode(OpCode::OpNil, line);
+            }
+            Term::App(func, arg) => {
+                // For this phase, we only handle simple binary arithmetic.
+                // The AST for `(+ 1 2)` is `App(App(Builtin("+"), Float(1)), Float(2))`
+                if let Term::App(inner_func, first_arg) = &**func {
+                    // Compile arguments first, pushing them onto the stack.
+                    self.compile_term(first_arg)?;
+                    self.compile_term(arg)?;
+                    // Then compile the operator itself.
+                    self.compile_term(inner_func)?;
+                } else {
+                    // Handle unary operations like `(neg 1)`.
+                    self.compile_term(arg)?;
+                    self.compile_term(func)?;
+                }
+            }
+            Term::Builtin(op) => {
+                let op_code = match op.as_str() {
+                    "+" => OpCode::OpAdd,
+                    "-" => OpCode::OpSubtract,
+                    "*" => OpCode::OpMultiply,
+                    "/" => OpCode::OpDivide,
+                    "neg" => OpCode::OpNegate,
+                    "==" => OpCode::OpEqual, // Note: We need to define semantics for this later.
+                    "<" => OpCode::OpLess,
+                    ">" => OpCode::OpGreater,
+                    "not" => OpCode::OpNot,
+                    _ => return Err(CompileError::UnsupportedExpression(op.clone())),
+                };
+                self.chunk.write_opcode(op_code, line);
+            }
+            _ => {
+                // We don't support Vars, Lambdas, Ifs, etc., yet.
+                return Err(CompileError::UnsupportedExpression(format!("{:?}", term)));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::parse;
+
+    #[test]
+    fn test_compile_simple_arithmetic() {
+        // Expression: `(neg (+ 1 2))`
+        // This should compile to:
+        // 1. Push 1.0
+        // 2. Push 2.0
+        // 3. Add
+        // 4. Negate
+        // 5. Return
+        let term = parse("(neg (+ 1 2))").unwrap();
+        let chunk = compile(&term).unwrap();
+
+        // Check constants
+        assert_eq!(chunk.constants, vec![1.0, 2.0]);
+
+        // Check bytecode sequence
+        let expected_code = vec![
+            OpCode::OpConstant as u8, 0, // PUSH 1.0
+            OpCode::OpConstant as u8, 1, // PUSH 2.0
+            OpCode::OpAdd as u8,
+            OpCode::OpNegate as u8,
+            OpCode::OpReturn as u8,
+        ];
+        assert_eq!(chunk.code, expected_code);
+    }
+}
