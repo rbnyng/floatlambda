@@ -140,7 +140,7 @@ fn main() {
 
     if let Some(path) = cli.file {
         // A file path was provided, so we run the script.
-        if let Err(e) = run_script(&path) {
+        if let Err(e) = run_script(&path, &mut heap, &mut global_env_map) { 
             // If an error occurs, print it to stderr and exit with a non-zero code.
             eprintln!("Error: {}", e);
             std::process::exit(1);
@@ -152,18 +152,15 @@ fn main() {
 }
 
 /// Runs the interpreter on a given script file.
-fn run_script(path: &Path) -> Result<(), String> {
+fn run_script(path: &Path, heap: &mut Heap, global_env_map: &mut HashMap<String, f64>) -> Result<(), String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
 
-    let mut table = Heap::new();
-    let mut global_env_map = HashMap::new();
-
     // The existing process_input function can be reused here.
-    let result = process_input(&content, &mut table, &mut global_env_map, false)?;
+    let result = process_input(&content, heap, global_env_map, false)?;
 
     // Print the final result of the script.
-    print_result(result, &table);
+    print_result(result, heap);
     Ok(())
 }
 
