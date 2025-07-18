@@ -42,6 +42,19 @@ pub struct Heap {
 }
 
 impl Heap {
+    // A helper for debugging to find the ID of a given object. Inefficient because it's O(N) but whatever; it's a debug tool
+    pub fn find_id(&self, obj_to_find: &HeapObject) -> Option<u64> {
+        let ptr_to_find = obj_to_find as *const HeapObject;
+        for (i, obj_opt) in self.objects.iter().enumerate() {
+            if let Some(obj) = obj_opt {
+                if (obj as *const HeapObject) == ptr_to_find {
+                    return Some(i as u64);
+                }
+            }
+        }
+        None
+    }
+
     pub fn get_mut(&mut self, id: u64) -> Option<&mut HeapObject> {
         self.objects.get_mut(id as usize).and_then(|f| f.as_mut())
     }

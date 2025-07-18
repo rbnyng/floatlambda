@@ -4,7 +4,7 @@ FloatLambda is a functional programming language built on a simple constraint: *
 
 ## Core Philosophy
 
-Most programming languages have complex type systems to prevent errors. FloatLambda takes the opposite approach: achieve type safety by having only one type. There are no type errors because there's only one type to work with.
+Most programming languages have complex type systems to prevent errors. FloatLambda takes the opposite approach: achieve type safety by having only one type. Traditional type errors don't exist; instead, they transmute into weird, wonderful, and whimsical runtime behavior. Take that, OCaml bros.
 
 ## Basic Values
 
@@ -75,10 +75,16 @@ Works for:
 ```
 
 ### Fuzzy Equality
+
+The `==` operator is scale-invariant, meaning it compares numbers based on their relative difference.
+
 ```
-(== 1.0 1.1)                           # → ~0.905 (similarity-based)
-(== 1.0 1.0)                           # → 1.0 (exact match)
+(== 1.0 1.1)                             # → ~0.909 (10% difference)
+(== 1000.0 1001.0)                       # → ~0.999 (0.1% difference)
+(== 1.0 1.0)                             # → 1.0
 ```
+
+It uses the formula $e^{- \\frac{|x-y|}{\\max(|x|, |y|, 1.0)}}$. For strict, bit-wise equality, use `eq?`.
 
 ## Data Structures: Lists
 
@@ -337,7 +343,7 @@ FloatLambda includes a REPL for interactive exploration:
 ```bash
 $ float_lambda
 FloatLambda v3 REPL
-Enter expressions, 'quit', or ':examples'
+Enter expressions, 'quit', ':examples', or ':inspect <id>'
 > ((+ 1) 2)
 Parsed: (+ 1 2)
 Result: 3.0 (1 objects alive)

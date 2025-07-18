@@ -4,6 +4,7 @@
 // A lambda calculus-like language where everything is an f64.
 
 use clap::Parser as ClapParser;
+use float_lambda::memory::encode_heap_pointer;
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -102,12 +103,100 @@ fn process_input(
     term.eval(&final_env, heap).map_err(|e| format!("Eval error: {}", e))
 }
 
+// --- HELPERS FOR HEAP INSPECTOR ---
+
+/// Formats a single f64 value for inspection, showing if it's a number, nil, or pointer.
+fn format_value(val: f64, heap: &Heap) -> String {
+    if val == NIL_VALUE {
+        "nil".to_string()
+    } else if let Some(id) = decode_heap_pointer(val) {
+        let obj_type = match heap.get(id) {
+            Some(HeapObject::UserFunc(_)) => "Function",
+            Some(HeapObject::BuiltinFunc(_)) => "Builtin",
+            Some(HeapObject::Pair(_, _)) => "Pair",
+            Some(HeapObject::Tensor(_)) => "Tensor",
+            Some(HeapObject::Free(_)) => "FreeSlot",
+            None => "Invalid",
+        };
+        format!("{}<{}>", obj_type, id)
+    } else {
+        val.to_string()
+    }
+}
+
+/// Recursively formats a list-like structure for pretty-printing.
+fn format_list_structure(mut current_ptr: f64, heap: &Heap, max_depth: usize) -> String {
+    let mut parts = Vec::new();
+    for _ in 0..max_depth {
+        if current_ptr == NIL_VALUE {
+            return format!("({})", parts.join(" "));
+        }
+        if let Some(id) = decode_heap_pointer(current_ptr) {
+            if let Some(HeapObject::Pair(car, cdr)) = heap.get(id) {
+                parts.push(format_value(*car, heap));
+                current_ptr = *cdr;
+            } else {
+                // Not a pair, so it's a dotted list
+                parts.push(".".to_string());
+                parts.push(format_value(current_ptr, heap));
+                return format!("({})", parts.join(" "));
+            }
+        } else {
+            // Not a pointer, so it's a dotted list
+            parts.push(".".to_string());
+            parts.push(format_value(current_ptr, heap));
+            return format!("({})", parts.join(" "));
+        }
+    }
+    // Reached max depth
+    parts.push("...".to_string());
+    format!("({})", parts.join(" "))
+}
+
+/// Pretty-prints the details of a HeapObject for the :inspect command.
+fn print_heap_object_details(obj: &HeapObject, heap: &Heap) {
+    match obj {
+        HeapObject::UserFunc(c) => {
+            println!("  Type: User-defined Function");
+            println!("  Param: {}", c.param);
+            println!("  Body: {}", c.body);
+            println!("  Env captures: [{}]", c.env.keys().cloned().collect::<Vec<_>>().join(", "));
+        }
+        HeapObject::BuiltinFunc(c) => {
+            println!("  Type: Built-in Function (Partial Application)");
+            println!("  Op: {}", c.op);
+            println!("  Arity: {}", c.arity);
+            println!("  Args applied: {} / {}", c.args.len(), c.arity);
+            let formatted_args: Vec<String> = c.args.iter().map(|&arg| format_value(arg, heap)).collect();
+            println!("  Captured args: [{}]", formatted_args.join(", "));
+        }
+        HeapObject::Pair(car, cdr) => {
+            println!("  Type: Pair (Cons Cell)");
+            println!("  car: {}", format_value(*car, heap));
+            println!("  cdr: {}", format_value(*cdr, heap));
+            // Attempt to print as a list
+            let list_repr = format_list_structure(encode_heap_pointer(heap.find_id(obj).unwrap()), heap, 10);
+            println!("  List repr: {}", list_repr);
+        }
+        HeapObject::Tensor(t) => {
+            println!("  Type: Tensor");
+            println!("  Shape: {:?}", t.shape);
+            let data_preview: Vec<f64> = t.data.iter().take(5).copied().collect();
+            println!("  Data (preview): {:?} {}", data_preview, if t.data.len() > 5 { "..." } else { "" });
+        }
+        HeapObject::Free(next) => {
+            println!("  Type: Free Slot");
+            println!("  Points to next free slot: {:?}", if *next == u64::MAX { "None".to_string() } else { next.to_string() });
+        }
+    }
+}
+
 // Simple REPL
 pub fn repl() {
-    println!("FloatLambda v3 REPL");
-    println!("Enter expressions, 'quit', or ':examples'");
+    println!("FloatLambda REPL");
+    println!("Enter expressions, 'quit', ':examples', or ':inspect <id>'");
 
-    let mut heap = Heap::new(); // --- CHANGE
+    let mut heap = Heap::new();
     let mut global_env_map = HashMap::new();
     let mut last_result = 0.0;
 
@@ -127,6 +216,24 @@ pub fn repl() {
         if input_str.is_empty() { continue; }
         if input_str == ":examples" {
             show_examples();
+            continue;
+        }
+        if input_str.starts_with(":inspect") {
+            let parts: Vec<&str> = input_str.split_whitespace().collect();
+            if parts.len() == 2 {
+                match parts[1].parse::<u64>() {
+                    Ok(id) => match heap.get(id) {
+                        Some(obj) => {
+                            println!("Heap Object [{}]:", id);
+                            print_heap_object_details(obj, &heap);
+                        }
+                        None => println!("Error: No object found at heap ID {}.", id),
+                    },
+                    Err(_) => println!("Error: Invalid heap ID '{}'. Must be a number.", parts[1]),
+                }
+            } else {
+                println!("Usage: :inspect <heap_id>");
+            }
             continue;
         }
 
