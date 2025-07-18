@@ -68,124 +68,223 @@ pub fn apply_function(func_val: f64, arg_val: f64, heap: &mut Heap) -> Result<f6
 }
 
 
-// --- The Evaluator ---
-impl Term {
-    pub fn eval(&self, env: &Environment, heap: &mut Heap) -> Result<f64, EvalError> {
-        match self {
-            Term::Float(n) => Ok(*n),
-            Term::Nil => Ok(NIL_VALUE),
+// --- CPS Trampoline Helpers ---
+#[derive(Debug)]
+enum Continuation {
+    /// Sentinel value indicating the end of the computation.
+    Done,
+    /// Finished evaluating the value of a let, now evaluate the body.
+    Let { name: String, body: Box<Term>, env: Environment },
+    /// Finished evaluating the value of a let rec, now evaluate the body.
+    LetRec { name: String, body: Box<Term>, env: Environment },
+    /// Finished evaluating the function part of an App, now evaluate the argument.
+    AppFunc { arg: Box<Term>, env: Environment },
+    /// Finished evaluating the argument part of an App, now apply the function to the argument.
+    AppArg { func_val: f64 },
+    /// Finished evaluating the cond of an If, now evaluate the branches.
+    IfCond { then_branch: Box<Term>, else_branch: Box<Term>, env: Environment },
+    /// (For fuzzy If) Finished then branch, now evaluate else branch.
+    IfThen { else_branch: Box<Term>, env: Environment, cond_val: f64 },
+    /// (For fuzzy If) Finished else branch, now compute the final blend.
+    IfElse { then_val: f64, cond_val: f64 },
+}
 
-            Term::Var(name) => env
-                .get(name)
-                .copied()
-                .ok_or_else(|| EvalError::UnboundVariable(name.clone())),
+/// Helper for let rec to patch a closure's environment with its own pointer.
+fn patch_recursively(val: f64, name: &str, final_val: f64, heap: &mut Heap) {
+    let mut pair_to_trace: Option<(f64, f64)> = None;
 
-            Term::Lam(param, body) => {
-                let closure = Closure {
-                    param: param.clone(),
-                    body: body.clone(),
-                    env: env.clone(),
-                };
-                let id = heap.register(HeapObject::UserFunc(closure));
-                Ok(encode_heap_pointer(id))
-            }
-            
-            Term::Let(name, value, body) => {
-                let value_val = value.eval(env, heap)?;
-                let mut new_env_map = env.as_ref().clone(); 
-                new_env_map.insert(name.clone(), value_val);
-                body.eval(&Rc::new(new_env_map), heap)
-            }
-
-            Term::LetRec(name, value, body) => {
-                let mut temp_env_map = env.as_ref().clone();
-                temp_env_map.insert(name.clone(), f64::NAN); // Insert placeholder
-                let temp_env = Rc::new(temp_env_map);
-                
-                let value_val = value.eval(&temp_env, heap)?;
-
-                if decode_heap_pointer(value_val).is_none() {
-                    return Err(EvalError::TypeError(
-                        "let rec expression must result in a heap-allocated value (a function or pair)".to_string()
-                    ));
-                }
-
-                fn patch_recursively(val: f64, name: &str, final_val: f64, heap: &mut Heap) {
-                    let mut pair_to_trace: Option<(f64, f64)> = None;
-                
-                    if let Some(id) = decode_heap_pointer(val) {
-                        if let Some(obj) = heap.get_mut(id) {
-                            match obj {
-                                HeapObject::UserFunc(closure) => {
-                                    if let Some(map) = Rc::get_mut(&mut closure.env) {
-                                        if map.get(name).map_or(false, |v| v.is_nan()) {
-                                            map.insert(name.to_string(), final_val);
-                                        }
-                                    } else {
-                                        let mut new_map = closure.env.as_ref().clone();
-                                        if new_map.get(name).map_or(false, |v| v.is_nan()) {
-                                            new_map.insert(name.to_string(), final_val);
-                                            closure.env = Rc::new(new_map);
-                                        }
-                                    }
-                                },
-                                HeapObject::Pair(car, cdr) => {
-                                    pair_to_trace = Some((*car, *cdr));
-                                },
-                                _ => {}
-                            }
+    if let Some(id) = decode_heap_pointer(val) {
+        if let Some(obj) = heap.get_mut(id) {
+            match obj {
+                HeapObject::UserFunc(closure) => {
+                    if let Some(map) = Rc::get_mut(&mut closure.env) {
+                        if map.get(name).map_or(false, |v| v.is_nan()) {
+                            map.insert(name.to_string(), final_val);
+                        }
+                    } else {
+                        let mut new_map = closure.env.as_ref().clone();
+                        if new_map.get(name).map_or(false, |v| v.is_nan()) {
+                            new_map.insert(name.to_string(), final_val);
+                            closure.env = Rc::new(new_map);
                         }
                     }
-                
-                    if let Some((car, cdr)) = pair_to_trace {
-                        patch_recursively(car, name, final_val, heap);
-                        patch_recursively(cdr, name, final_val, heap);
+                },
+                HeapObject::Pair(car, cdr) => {
+                    pair_to_trace = Some((*car, *cdr));
+                },
+                _ => {}
+            }
+        }
+    }
+
+    if let Some((car, cdr)) = pair_to_trace {
+        patch_recursively(car, name, final_val, heap);
+        patch_recursively(cdr, name, final_val, heap);
+    }
+}
+
+
+// --- The Evaluator ---
+impl Term {
+    /// Evaluates a Term using a trampoline to implement Continuation-Passing Style (CPS).
+    /// This version uses a two-phase loop to correctly manage evaluation and continuation.
+    pub fn eval(&self, env: &Environment, heap: &mut Heap) -> Result<f64, EvalError> {
+        let mut current_term = self.clone();
+        let mut current_env = env.clone();
+        let mut cont_stack: Vec<Continuation> = vec![Continuation::Done];
+        let mut result_val: f64 = 0.0;
+
+        'trampoline: loop {
+            // --- PHASE 1: EVALUATION ---
+            // Keep deconstructing terms until we hit a base case that produces a value.
+            match &current_term {
+                Term::Float(n) => result_val = *n,
+                Term::Nil => result_val = NIL_VALUE,
+                Term::Var(name) => {
+                    result_val = current_env.get(name)
+                        .copied()
+                        .ok_or_else(|| EvalError::UnboundVariable(name.clone()))?;
+                }
+                Term::Lam(param, body) => {
+                    let closure = Closure { param: param.clone(), body: body.clone(), env: current_env.clone() };
+                    let id = heap.register(HeapObject::UserFunc(closure));
+                    result_val = encode_heap_pointer(id);
+                }
+                Term::Builtin(op) => {
+                    let arity = get_builtin_arity(op)?;
+                    if arity == 0 {
+                        result_val = execute_builtin(op, &[], heap)?;
+                    } else {
+                        let builtin_closure = BuiltinClosure { op: op.clone(), arity, args: Vec::new() };
+                        let id = heap.register(HeapObject::BuiltinFunc(builtin_closure));
+                        result_val = encode_heap_pointer(id);
                     }
                 }
-
-                patch_recursively(value_val, &name, value_val, heap);
-            
-                let mut body_env_map = env.as_ref().clone();
-                body_env_map.insert(name.clone(), value_val);
-                body.eval(&Rc::new(body_env_map), heap)
-            }
-
-            Term::Builtin(op) => {
-                let arity = get_builtin_arity(op)?;
-                if arity == 0 {
-                    return execute_builtin(op, &[], heap);
+                Term::Let(name, value, body) => {
+                    cont_stack.push(Continuation::Let { name: name.clone(), body: body.clone(), env: current_env.clone() });
+                    current_term = (**value).clone();
+                    // The value is evaluated in the current environment, which is preserved.
+                    continue 'trampoline;
                 }
-
-                let builtin_closure = BuiltinClosure {
-                    op: op.clone(),
-                    arity,
-                    args: Vec::new(),
-                };
-                let id = heap.register(HeapObject::BuiltinFunc(builtin_closure));
-                Ok(encode_heap_pointer(id))
-            }
-
-            Term::App(func, arg) => {
-                let func_val = func.eval(env, heap)?;
-                let arg_val = arg.eval(env, heap)?;
-                // Refactored logic into the helper function
-                apply_function(func_val, arg_val, heap)
-            }
-            
-            Term::If(cond, then_branch, else_branch) => {
-                let condition_val = cond.eval(env, heap)?;
-
-                if condition_val == 0.0 || condition_val == NIL_VALUE {
-                    return else_branch.eval(env, heap);
+                Term::LetRec(name, value, body) => {
+                    let mut temp_env_map = current_env.as_ref().clone();
+                    temp_env_map.insert(name.clone(), f64::NAN);
+                    let temp_env = Rc::new(temp_env_map);
+                    
+                    cont_stack.push(Continuation::LetRec { name: name.clone(), body: body.clone(), env: current_env.clone() });
+                    current_term = (**value).clone();
+                    current_env = temp_env;
+                    continue 'trampoline;
                 }
-                if condition_val == 1.0 {
-                    return then_branch.eval(env, heap);
+                Term::App(func, arg) => {
+                    cont_stack.push(Continuation::AppFunc { arg: arg.clone(), env: current_env.clone() });
+                    current_term = (**func).clone();
+                    continue 'trampoline;
                 }
+                Term::If(cond, then_branch, else_branch) => {
+                    cont_stack.push(Continuation::IfCond { then_branch: then_branch.clone(), else_branch: else_branch.clone(), env: current_env.clone() });
+                    current_term = (**cond).clone();
+                    continue 'trampoline;
+                }
+            };
 
-                let then_val = then_branch.eval(env, heap)?;
-                let else_val = else_branch.eval(env, heap)?;
-                let weight = condition_val.max(0.0).min(1.0);
-                Ok(weight * then_val + (1.0 - weight) * else_val)
+            // --- PHASE 2: CONTINUATION ---
+            // A value has been produced in result_val. Now, consume continuations
+            // until we need to evaluate a new term.
+            loop {
+                match cont_stack.pop().unwrap() {
+                    Continuation::Done => {
+                        return Ok(result_val);
+                    }
+                    Continuation::Let { name, body, env } => {
+                        let mut new_env_map = env.as_ref().clone();
+                        new_env_map.insert(name, result_val);
+                        current_env = Rc::new(new_env_map);
+                        current_term = *body;
+                        continue 'trampoline; 
+                    }
+                    Continuation::LetRec { name, body, env } => {
+                        let value_val = result_val;
+                        if decode_heap_pointer(value_val).is_none() {
+                            return Err(EvalError::TypeError("let rec expression must result in a heap-allocated value (a function or pair)".to_string()));
+                        }
+                        patch_recursively(value_val, &name, value_val, heap);
+                        let mut body_env_map = env.as_ref().clone();
+                        body_env_map.insert(name, value_val);
+                        current_env = Rc::new(body_env_map);
+                        current_term = *body;
+                        continue 'trampoline; 
+                    }
+                    Continuation::AppFunc { arg, env } => {
+                        cont_stack.push(Continuation::AppArg { func_val: result_val });
+                        current_term = *arg;
+                        current_env = env;
+                        continue 'trampoline; 
+                    }
+                    Continuation::AppArg { func_val } => {
+                        let arg_val = result_val;
+                        if let Some(id) = decode_heap_pointer(func_val) {
+                            let heap_obj = heap.get(id).cloned().ok_or(EvalError::DanglingPointerError(id))?;
+                            match heap_obj {
+                                HeapObject::UserFunc(closure) => {
+                                    let mut new_env_map = closure.env.as_ref().clone();
+                                    new_env_map.insert(closure.param, arg_val);
+                                    current_env = Rc::new(new_env_map);
+                                    current_term = *closure.body;
+                                    continue 'trampoline; 
+                                }
+                                HeapObject::BuiltinFunc(mut closure) => {
+                                    closure.args.push(arg_val);
+                                    if closure.args.len() == closure.arity {
+                                        result_val = execute_builtin(&closure.op, &closure.args, heap)?;
+                                        continue; // Stay in continuation loop with new value.
+                                    } else {
+                                        let new_id = heap.register(HeapObject::BuiltinFunc(closure));
+                                        result_val = encode_heap_pointer(new_id);
+                                        continue; // Stay in continuation loop with new value.
+                                    }
+                                }
+                                HeapObject::Pair(_, _) => return Err(EvalError::TypeError(format!("Cannot apply a non-function value: Pair<{}>", id))),
+                                HeapObject::Tensor(_) => return Err(EvalError::TypeError(format!("Cannot apply a non-function value: Tensor<{}>", id))),
+                                HeapObject::Free(_) => return Err(EvalError::DanglingPointerError(id)),
+                            }
+                        } else if func_val == NIL_VALUE {
+                            return Err(EvalError::TypeError("Cannot apply a non-function value: nil".to_string()));
+                        } else {
+                            return Err(EvalError::TypeError(format!("Cannot apply a non-function value: {}", func_val)));
+                        }
+                    }
+                    Continuation::IfCond { then_branch, else_branch, env } => {
+                        let cond_val = result_val;
+                        if cond_val == 0.0 || cond_val == NIL_VALUE {
+                            current_term = *else_branch;
+                            current_env = env;
+                            continue 'trampoline; 
+                        }
+                        if cond_val == 1.0 {
+                            current_term = *then_branch;
+                            current_env = env;
+                            continue 'trampoline; 
+                        }
+                        cont_stack.push(Continuation::IfThen { else_branch, env: env.clone(), cond_val });
+                        current_term = *then_branch;
+                        current_env = env;
+                        continue 'trampoline; 
+                    }
+                    Continuation::IfThen { else_branch, env, cond_val } => {
+                        let then_val = result_val;
+                        cont_stack.push(Continuation::IfElse { then_val, cond_val });
+                        current_term = *else_branch;
+                        current_env = env;
+                        continue 'trampoline; 
+                    }
+                    Continuation::IfElse { then_val, cond_val } => {
+                        let else_val = result_val;
+                        let weight = cond_val.max(0.0).min(1.0);
+                        result_val = weight * then_val + (1.0 - weight) * else_val;
+                        continue; // Stay in continuation loop with new value.
+                    }
+                }
             }
         }
     }

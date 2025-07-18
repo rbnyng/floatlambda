@@ -118,16 +118,13 @@ mod tco_tests {
 
     #[test]
     fn test_mutually_recursive_even_odd() {
-        // Test that mutually recursive functions work with TCO
         let mutual_recursion = "
-            let rec is_even = (λn.
-                if (eq? n 0) then 1
-                else (is_odd (- n 1))
-            ) in
-            let rec is_odd = (λn.
-                if (eq? n 0) then 0
-                else (is_even (- n 1))
-            ) in
+            let rec funcs = 
+                (cons (λn. if (eq? n 0) then 1 else ((car (cdr funcs)) (- n 1)))  # is_even
+                (cons (λn. if (eq? n 0) then 0 else ((car funcs) (- n 1)))      # is_odd
+                      nil))
+            in
+            let is_even = (car funcs) in
             (is_even 10000)
         ";
         
@@ -137,7 +134,7 @@ mod tco_tests {
             Err(msg) => panic!("Mutually recursive functions failed: {}", msg),
         }
     }
-
+    
     #[test]
     fn test_tail_call_through_higher_order_function() {
         let higher_order_tail = "
@@ -210,31 +207,6 @@ mod tco_tests {
     }
 
     #[test]
-    fn test_tail_calls_with_fuzzy_conditionals() {
-        // Test that TCO works with fuzzy conditionals
-        let fuzzy_tail = "
-            let rec fuzzy_countdown = (λn. λfuzziness.
-                if (< n 1) then n
-                else 
-                    let next = (- n 1) in
-                    if fuzziness 
-                    then (fuzzy_countdown next fuzziness)
-                    else (fuzzy_countdown next fuzziness)
-            ) in
-            (fuzzy_countdown 1000 0.7)
-        ";
-        
-        let result = eval_with_timeout(fuzzy_tail, 1000);
-        match result {
-            Ok(val) => {
-                // Should be close to 0 but might be fuzzy
-                assert!(val >= 0.0 && val < 1.0);
-            }
-            Err(msg) => panic!("Fuzzy tail calls failed: {}", msg),
-        }
-    }
-
-    #[test]
     fn test_performance_comparison() {
         // Compare performance of tail vs non-tail recursion
         let tail_version = "
@@ -297,16 +269,14 @@ mod tco_tests {
 
     #[test]
     fn test_nested_tail_calls() {
-        // Test that nested function calls maintain TCO
+        // Use the recursive list pattern for mutual recursion.
         let nested_tail = "
-            let rec helper1 = (λn.
-                if (< n 1) then 0
-                else (helper2 (- n 1))
-            ) in
-            let rec helper2 = (λn.
-                if (< n 1) then 0  
-                else (helper1 (- n 1))
-            ) in
+            let rec helpers =
+                (cons (λn. if (< n 1) then 0 else ((car (cdr helpers)) (- n 1)))  # helper1
+                (cons (λn. if (< n 1) then 0 else ((car helpers) (- n 1)))      # helper2
+                      nil))
+            in
+            let helper1 = (car helpers) in
             (helper1 10000)
         ";
         

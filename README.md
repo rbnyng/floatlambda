@@ -216,7 +216,6 @@ if confidence then safe_action else risky_action    # → 28.0
 ### Calculus
 - `diff` - Numerical differentiation: `(diff f x)` computes f'(x)
 - `integrate` - Curried integration: `((integrate f a) b)` computes ∫ₐᵇ f(x)dx  
-- `integrate3` - Direct integration: `(integrate3 f a b)` computes ∫ₐᵇ f(x)dx
 
 ### Logic
 - `fuzzy_and`, `fuzzy_or`, `fuzzy_not` - Continuous logic operations
