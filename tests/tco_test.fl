@@ -1,0 +1,124 @@
+# tco_test.fl 
+
+# FloatLambda script to test tail call optimization
+
+# Test harness
+let test = (λtest_name. λexpected. λactual.
+  let passed = (eq? expected actual) in
+  if passed then
+    (print (append (cons 80.0 (cons 65.0 (cons 83.0 (cons 83.0 nil)))) test_name)) # "PASS"
+  else (
+    (print (append (cons 70.0 (cons 65.0 (cons 73.0 (cons 76.0 nil)))) test_name)) # "FAIL"
+    (print (cons 10.0 nil)) # newline
+  )
+) in
+
+let print_test_header = (λname.
+  (print (cons 10.0 (cons 61.0 (cons 61.0 (cons 61.0 (cons 32.0 name)))))) # "\n=== "
+) in
+
+let newline = (λ_. (print (cons 10.0 nil))) in
+
+# Start testing
+let start_msg = (print_test_header (cons 84.0 (cons 67.0 (cons 79.0 (cons 32.0 (cons 84.0 (cons 101.0 (cons 115.0 (cons 116.0 (cons 115.0 nil)))))))))) in # "TCO Tests"
+
+# Test 1: Simple tail recursive factorial
+let rec fact_tail = (λn. λacc.
+  if (< n 2) then acc
+  else (fact_tail (- n 1) (* n acc))
+) in
+let t1 = (test (cons 49.0 nil) 3628800.0 (fact_tail 10 1)) in
+
+# Test 2: Tail recursive countdown (should not stack overflow)
+let rec countdown = (λn.
+  if (< n 1) then 0
+  else (countdown (- n 1))
+) in
+let t2 = (test (cons 50.0 nil) 0.0 (countdown 5000)) in
+
+# Test 3: Tail recursive Fibonacci
+let rec fib_helper = (λn. λa. λb.
+  if (< n 1) then a
+  else (fib_helper (- n 1) b (+ a b))
+) in
+let fib = (λn. (fib_helper n 0 1)) in
+let t3 = (test (cons 51.0 nil) 55.0 (fib 10)) in
+
+# Test 4: Sum using tail recursion
+let rec sum_to_n = (λn. λacc.
+  if (< n 1) then acc
+  else (sum_to_n (- n 1) (+ acc n))
+) in
+let t4 = (test (cons 52.0 nil) 5050.0 (sum_to_n 100 0)) in
+
+# Test 6: Higher-order function with tail calls
+let rec apply_n_times = (λf. λn. λx.
+  if (< n 1) then x
+  else (apply_n_times f (- n 1) (f x))
+) in
+let inc = (+ 1) in
+let t6 = (test (cons 54.0 nil) 1000.0 (apply_n_times inc 1000 0)) in
+
+# Test 7: List processing with tail recursion
+let rec sum_list = (λlst. λacc.
+  if (eq? lst nil) then acc
+  else (sum_list (cdr lst) (+ acc (car lst)))
+) in
+let test_list = (cons 1 (cons 2 (cons 3 (cons 4 (cons 5 nil))))) in
+let t7 = (test (cons 55.0 nil) 15.0 (sum_list test_list 0)) in
+
+# Test 8: Deep identity function (tests stack safety)
+let rec deep_identity = (λn. λx.
+  if (< n 1) then x
+  else (deep_identity (- n 1) x)
+) in
+let t8 = (test (cons 56.0 nil) 42.0 (deep_identity 10000 42)) in
+
+# Test 9: Tail recursion through let expressions
+let rec countdown_let = (λn.
+  let next_n = (- n 1) in
+  if (< next_n 0) then n
+  else (countdown_let next_n)
+) in
+let t9 = (test (cons 57.0 nil) 0.0 (countdown_let 1000)) in
+
+# Test 10: Complex tail recursive function
+let rec complex_sum = (λlst. λmultiplier. λacc.
+  if (eq? lst nil) then acc
+  else 
+    let head = (car lst) in
+    let tail = (cdr lst) in
+    let new_acc = (+ acc (* head multiplier)) in
+    (complex_sum tail multiplier new_acc)
+) in
+let complex_list = (cons 1 (cons 2 (cons 3 (cons 4 (cons 5 nil))))) in
+let t10 = (test (cons 58.0 nil) 150.0 (complex_sum complex_list 10 0)) in
+
+# Test 11: Verify non-tail recursion still works
+let rec factorial_non_tail = (λn.
+  if (< n 2) then 1
+  else (* n (factorial_non_tail (- n 1)))
+) in
+let t11 = (test (cons 59.0 nil) 120.0 (factorial_non_tail 5)) in
+
+# Test 12: Mixed tail and non-tail
+let tail_sum_result = (sum_to_n 10 0) in
+let non_tail_fact_result = (factorial_non_tail 4) in
+let t12 = (test (cons 60.0 nil) 79.0 (+ tail_sum_result non_tail_fact_result)) in # 55 + 24 = 79
+
+# Performance test message
+let perf_msg = (print_test_header (cons 80.0 (cons 101.0 (cons 114.0 (cons 102.0 (cons 111.0 (cons 114.0 (cons 109.0 (cons 97.0 (cons 110.0 (cons 99.0 (cons 101.0 nil)))))))))))) in # "Performance"
+
+# Test 13: Large tail recursion (performance test)
+let large_countdown_result = (countdown 50000) in
+let t13 = (test (cons 61.0 nil) 0.0 large_countdown_result) in
+
+# Test 14: Large sum (performance test) 
+let large_sum_result = (sum_to_n 10000 0) in
+let t14 = (test (cons 62.0 nil) 50005000.0 large_sum_result) in
+
+# Completion message
+let done_msg = (print_test_header (cons 68.0 (cons 111.0 (cons 110.0 (cons 101.0 nil))))) in # "Done"
+
+# Final result
+(newline 0)
