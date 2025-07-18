@@ -11,6 +11,13 @@ let const = (λx. λy. x) in
 # Composes two functions. (compose f g x) is equivalent to (f (g x)).
 let compose = (λf. λg. λx. (f (g x))) in
 
+# --- Numeric utilities ---
+
+let max = (λa. λb. (if (> a b) then a else b)) in
+
+let min = (λa. λb. (if (< a b) then a else b)) in
+
+let between = (λx. λlow. λhigh. (and (>= x low) (<= x high))) in
 
 # --- Logical Operators ---
 
@@ -53,6 +60,34 @@ let rec reverse_iter = (λl. λacc.
 ) in
 let reverse = (λl. (reverse_iter l nil)) in
 
+let rec take = (λn. λlst.
+  if (or (eq? n 0) (null? lst)) then nil
+  else (cons (car lst) (take (- n 1) (cdr lst)))
+) in
+
+let rec drop = (λn. λlst.
+  if (or (eq? n 0) (null? lst)) then lst
+  else (drop (- n 1) (cdr lst))
+) in
+
+# Safe list operations
+let safe_car = (λlst. (if (null? lst) then nil else (car lst))) in
+let safe_cdr = (λlst. (if (null? lst) then nil else (cdr lst))) in
+
+# List indexing with bounds checking
+let rec list_get = (λlst. λindex.
+  if (< index 0) then nil
+  else if (null? lst) then nil
+  else if (eq? index 0) then (car lst)
+  else (list_get (cdr lst) (- index 1))
+) in
+
+# Generate range of numbers
+let rec range_helper = (λstart. λend. λacc.
+  (if (> start end) then (reverse acc)
+   else (range_helper (+ start 1) end (cons start acc)))
+) in
+let range = (λstart. λend. (range_helper start end nil)) in
 
 # --- Higher-Order List Functions ---
 
@@ -64,5 +99,408 @@ let any? = (λp. λl. (foldl (λacc. λelem. (or acc (p elem))) 0 l)) in
 # Example: (all? is_positive my_list)
 let all? = (λp. λl. (foldl (λacc. λelem. (and acc (p elem))) 1 l)) in
 
-# Return identity function as the result of loading the prelude
+# --- String Functions ---
+
+# String equality (deep comparison of character lists)
+let rec string_eq = (λs1. λs2.
+  if (and (null? s1) (null? s2)) then 1
+  else if (or (null? s1) (null? s2)) then 0
+  else if (eq? (car s1) (car s2)) then (string_eq (cdr s1) (cdr s2))
+  else 0
+) in
+
+# String creation helpers
+let string_from_codes = (λcodes. codes) in
+let char_code = (λchar_num. char_num) in
+
+# Common character codes as constants
+let SPACE = 32.0 in
+let NEWLINE = 10.0 in
+let TAB = 9.0 in
+let QUOTE = 34.0 in
+let BACKSLASH = 92.0 in
+
+# String length (reuse list length)
+let string_length = length in
+
+# String concatenation (reuse list append)
+let string_concat = append in
+
+# Character at index
+let string_get = list_get in
+
+# Substring extraction
+let substring = (λstr. λstart. λlen.
+  (take len (drop start str))
+) in
+
+# String splitting by delimiter
+let rec string_split = (λstr. λdelim_code.
+  let rec split_helper = (λremaining. λcurrent_word. λresult.
+    if (null? remaining) then
+      (if (null? current_word) then result
+       else (append result (cons current_word nil)))
+    else
+      let char = (car remaining) in
+      let rest = (cdr remaining) in
+      if (eq? char delim_code) then
+        (split_helper rest nil (append result (cons current_word nil)))
+      else
+        (split_helper rest (append current_word (cons char nil)) result)
+  ) in
+  (split_helper str nil nil)
+) in
+
+# String joining with separator
+let rec string_join = (λstr_list. λseparator.
+  let rec join_helper = (λlst. λsep. λfirst.
+    if (null? lst) then nil
+    else if first then
+      (append (car lst) (join_helper (cdr lst) sep 0))
+    else
+      (append sep (append (car lst) (join_helper (cdr lst) sep 0)))
+  ) in
+  (join_helper str_list separator 1)
+) in
+
+# String case conversion (basic ASCII)
+let to_uppercase_char = (λc.
+  (if (and (>= c 97) (<= c 122)) then (- c 32) else c)
+) in
+
+let to_lowercase_char = (λc.
+  (if (and (>= c 65) (<= c 90)) then (+ c 32) else c)
+) in
+
+let string_uppercase = (λstr. (map to_uppercase_char str)) in
+let string_lowercase = (λstr. (map to_lowercase_char str)) in
+
+# String searching
+let rec string_contains = (λhaystack. λneedle.
+  let needle_len = (length needle) in
+  let rec search_at = (λpos.
+    if (> (+ pos needle_len) (length haystack)) then 0
+    else
+      let candidate = (substring haystack pos needle_len) in
+      if (string_eq candidate needle) then 1
+      else (search_at (+ pos 1))
+  ) in
+  (search_at 0)
+) in
+
+let string_starts_with = (λstr. λprefix.
+  let prefix_len = (length prefix) in
+  (string_eq (substring str 0 prefix_len) prefix)
+) in
+
+let string_ends_with = (λstr. λsuffix.
+  let str_len = (length str) in
+  let suffix_len = (length suffix) in
+  let start_pos = (- str_len suffix_len) in
+  if (< start_pos 0) then 0
+  else (string_eq (substring str start_pos suffix_len) suffix)
+) in
+
+# --- Hash Map ---
+
+# Simple hash function for character lists
+let hash_string = (λstr. λbucket_count.
+  let sum = (foldl + 0 str) in
+  (rem (abs sum) bucket_count)
+) in
+
+# Create empty hash map with N buckets  
+let hashmap_create = (λbucket_count.
+  let rec create_buckets = (λn.
+    if (eq? n 0) then nil
+    else (cons nil (create_buckets (- n 1)))
+  ) in
+  (cons bucket_count (create_buckets bucket_count))
+) in
+
+# Default hash map with reasonable bucket count
+let hashmap_new = (λ_. (hashmap_create 16)) in
+
+# Get bucket for key
+let hashmap_get_bucket = (λhmap. λkey.
+  let bucket_count = (car hmap) in
+  let buckets = (cdr hmap) in
+  let hash = (hash_string key bucket_count) in
+  (list_get buckets hash)
+) in
+
+# Insert key-value pair (returns new hash map)
+let hashmap_insert = (λhmap. λkey. λvalue.
+  let bucket_count = (car hmap) in
+  let buckets = (cdr hmap) in
+  let hash = (hash_string key bucket_count) in
+  
+  let rec update_buckets = (λbucket_list. λindex. λtarget_index.
+    if (null? bucket_list) then nil
+    else if (eq? index target_index) then
+      let old_bucket = (car bucket_list) in
+      # Remove existing entry with same key, then add new one
+      let rec remove_key = (λbucket.
+        if (null? bucket) then nil
+        else 
+          let pair = (car bucket) in
+          let pair_key = (car pair) in
+          if (string_eq pair_key key) then (cdr bucket)
+          else (cons pair (remove_key (cdr bucket)))
+      ) in
+      let cleaned_bucket = (remove_key old_bucket) in
+      let new_bucket = (cons (cons key value) cleaned_bucket) in
+      (cons new_bucket (cdr bucket_list))
+    else
+      (cons (car bucket_list) (update_buckets (cdr bucket_list) (+ index 1) target_index))
+  ) in
+  
+  (cons bucket_count (update_buckets buckets 0 hash))
+) in
+
+# Lookup value by key
+let hashmap_get = (λhmap. λkey.
+  let bucket = (hashmap_get_bucket hmap key) in
+  let rec search_bucket = (λbucket.
+    if (null? bucket) then nil
+    else
+      let pair = (car bucket) in
+      let pair_key = (car pair) in
+      let pair_value = (cdr pair) in
+      if (string_eq pair_key key) then pair_value
+      else (search_bucket (cdr bucket))
+  ) in
+  (search_bucket bucket)
+) in
+
+# Check if key exists
+let hashmap_contains = (λhmap. λkey.
+  let result = (hashmap_get hmap key) in
+  (not (eq? result nil))
+) in
+
+# Get all keys
+let rec hashmap_keys = (λhmap.
+  let buckets = (cdr hmap) in
+  let rec extract_keys_from_bucket = (λbucket.
+    if (null? bucket) then nil
+    else (cons (car (car bucket)) (extract_keys_from_bucket (cdr bucket)))
+  ) in
+  let rec process_buckets = (λbuckets.
+    if (null? buckets) then nil
+    else (append (extract_keys_from_bucket (car buckets)) (process_buckets (cdr buckets)))
+  ) in
+  (process_buckets buckets)
+) in
+
+# Get all values
+let rec hashmap_values = (λhmap.
+  let buckets = (cdr hmap) in
+  let rec extract_values_from_bucket = (λbucket.
+    if (null? bucket) then nil
+    else (cons (cdr (car bucket)) (extract_values_from_bucket (cdr bucket)))
+  ) in
+  let rec process_buckets = (λbuckets.
+    if (null? buckets) then nil
+    else (append (extract_values_from_bucket (car buckets)) (process_buckets (cdr buckets)))
+  ) in
+  (process_buckets buckets)
+) in
+
+# SET IMPLEMENTATION (SORTED LISTS)
+
+# Set representation: sorted list of unique elements
+let set_empty = nil in
+let set_new = (λ_. nil) in
+
+# Insert element maintaining sorted order and uniqueness
+let rec set_insert = (λset. λvalue.
+  if (null? set) then (cons value nil)
+  else if (< value (car set)) then (cons value set)
+  else if (eq? value (car set)) then set  # Already exists, no change
+  else (cons (car set) (set_insert (cdr set) value))
+) in
+
+# Check membership (binary search on sorted list)
+let rec set_contains = (λset. λvalue.
+  if (null? set) then 0
+  else if (eq? value (car set)) then 1
+  else if (< value (car set)) then 0  # Past where it would be
+  else (set_contains (cdr set) value)
+) in
+
+# Remove element
+let rec set_remove = (λset. λvalue.
+  if (null? set) then nil
+  else if (eq? value (car set)) then (cdr set)
+  else if (< value (car set)) then set  # Not found
+  else (cons (car set) (set_remove (cdr set) value))
+) in
+
+# Set union (merge sorted lists)
+let rec set_union = (λset1. λset2.
+  if (null? set1) then set2
+  else if (null? set2) then set1
+  else if (< (car set1) (car set2)) then 
+    (cons (car set1) (set_union (cdr set1) set2))
+  else if (eq? (car set1) (car set2)) then
+    (cons (car set1) (set_union (cdr set1) (cdr set2)))
+  else
+    (cons (car set2) (set_union set1 (cdr set2)))
+) in
+
+# Set intersection
+let rec set_intersection = (λset1. λset2.
+  if (or (null? set1) (null? set2)) then nil
+  else if (< (car set1) (car set2)) then 
+    (set_intersection (cdr set1) set2)
+  else if (> (car set1) (car set2)) then
+    (set_intersection set1 (cdr set2))
+  else  # Equal
+    (cons (car set1) (set_intersection (cdr set1) (cdr set2)))
+) in
+
+# Set difference (elements in set1 but not in set2)
+let rec set_difference = (λset1. λset2.
+  if (null? set1) then nil
+  else if (null? set2) then set1
+  else if (< (car set1) (car set2)) then
+    (cons (car set1) (set_difference (cdr set1) set2))
+  else if (eq? (car set1) (car set2)) then
+    (set_difference (cdr set1) (cdr set2))
+  else
+    (set_difference set1 (cdr set2))
+) in
+
+# Set size
+let set_size = length in
+
+# Convert list to set (removes duplicates, sorts)
+let rec list_to_set = (λlst.
+  if (null? lst) then nil
+  else (set_insert (list_to_set (cdr lst)) (car lst))
+) in
+
+# VECTOR IMPLEMENTATION (DYNAMIC ARRAYS)
+
+# Vector representation: (cons size (cons capacity data_list))
+let vector_new = (λ_. (cons 0 (cons 4 nil))) in
+
+# Create vector with initial capacity
+let vector_with_capacity = (λcap. (cons 0 (cons cap nil))) in
+
+# Vector from list
+let vector_from_list = (λlst.
+  let len = (length lst) in
+  (cons len (cons len lst))
+) in
+
+# Get vector size
+let vector_size = (λvec. (car vec)) in
+
+# Get vector capacity  
+let vector_capacity = (λvec. (car (cdr vec))) in
+
+# Get vector data
+let vector_data = (λvec. (cdr (cdr vec))) in
+
+# Vector element access by index
+let vector_get = (λvec. λindex.
+  (list_get (vector_data vec) index)
+) in
+
+# Vector push (append element)
+let vector_push = (λvec. λvalue.
+  let size = (vector_size vec) in
+  let capacity = (vector_capacity vec) in
+  let data = (vector_data vec) in
+  let new_data = (append data (cons value nil)) in
+  let new_size = (+ size 1) in
+  let new_capacity = (if (> new_size capacity) then (* capacity 2) else capacity) in
+  (cons new_size (cons new_capacity new_data))
+) in
+
+# Vector set element at index (returns new vector)
+let vector_set = (λvec. λindex. λvalue.
+  let size = (vector_size vec) in
+  let capacity = (vector_capacity vec) in
+  let data = (vector_data vec) in
+  let rec update_at = (λlst. λi. λval.
+    if (eq? i 0) then (cons val (cdr lst))
+    else (cons (car lst) (update_at (cdr lst) (- i 1) val))
+  ) in
+  let new_data = (update_at data index value) in
+  (cons size (cons capacity new_data))
+) in
+
+# Vector slice
+let vector_slice = (λvec. λstart. λend.
+  let data = (vector_data vec) in
+  let sliced_data = (take (- end start) (drop start data)) in
+  (vector_from_list sliced_data)
+) in
+
+# Vector map
+let vector_map = (λvec. λfunc.
+  let data = (vector_data vec) in
+  let mapped_data = (map func data) in
+  (vector_from_list mapped_data)
+) in
+
+# Vector filter
+let vector_filter = (λvec. λpredicate.
+  let data = (vector_data vec) in
+  let filtered_data = (filter predicate data) in
+  (vector_from_list filtered_data)
+) in
+
+# Vector concatenation
+let vector_concat = (λvec1. λvec2.
+  let data1 = (vector_data vec1) in
+  let data2 = (vector_data vec2) in
+  (vector_from_list (append data1 data2))
+) in
+
+# HIGHER-ORDER FUNCTIONS FOR DATA STRUCTURES
+
+# Map over hash map values
+let hashmap_map = (λhmap. λfunc.
+  let keys = (hashmap_keys hmap) in
+  let rec build_new_map = (λkeys. λacc.
+    if (null? keys) then acc
+    else
+      let key = (car keys) in
+      let old_value = (hashmap_get hmap key) in
+      let new_value = (func old_value) in
+      let new_acc = (hashmap_insert acc key new_value) in
+      (build_new_map (cdr keys) new_acc)
+  ) in
+  (build_new_map keys (hashmap_new))
+) in
+
+# Filter hash map by predicate on values
+let hashmap_filter = (λhmap. λpredicate.
+  let keys = (hashmap_keys hmap) in
+  let rec build_filtered_map = (λkeys. λacc.
+    if (null? keys) then acc
+    else
+      let key = (car keys) in
+      let value = (hashmap_get hmap key) in
+      let new_acc = (if (predicate value) then (hashmap_insert acc key value) else acc) in
+      (build_filtered_map (cdr keys) new_acc)
+  ) in
+  (build_filtered_map keys (hashmap_new))
+) in
+
+# Set map (applies function to each element)
+let set_map = (λset. λfunc.
+  (list_to_set (map func set))
+) in
+
+# Set filter
+let set_filter = (λset. λpredicate.
+  (filter predicate set)
+) in
+
+# Return identity to indicate successful prelude loading
 identity

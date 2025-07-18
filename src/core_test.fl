@@ -1,0 +1,150 @@
+# FloatLambda Core Language Test
+# Tests basic language features before testing prelude
+
+# Define basic functions for testing
+let identity = (λx. x) in
+let const = (λx. λy. x) in
+let compose = (λf. λg. λx. (f (g x))) in
+let not = (λx. (if x then 0 else 1)) in
+let and = (λa. λb. (if a then b else 0)) in
+let or = (λa. λb. (if a then 1 else b)) in
+let max = (λa. λb. (if (> a b) then a else b)) in
+
+# Basic list functions we need
+let rec append = (λl1. λl2. 
+  (if (eq? l1 nil) 
+    then l2
+    else (cons (car l1) (append (cdr l1) l2))
+  )
+) in
+
+let null? = (λl. (eq? l nil)) in
+
+let rec take = (λn. λlst.
+  if (or (eq? n 0) (null? lst)) then nil
+  else (cons (car lst) (take (- n 1) (cdr lst)))
+) in
+
+# String equality
+let rec string_eq = (λs1. λs2.
+  if (and (null? s1) (null? s2)) then 1
+  else if (or (null? s1) (null? s2)) then 0
+  else if (eq? (car s1) (car s2)) then (string_eq (cdr s1) (cdr s2))
+  else 0
+) in
+
+# Simple test function
+let test = (λtest_num. λexpected. λactual.
+  let passed = (eq? expected actual) in
+  if passed then
+    (print (cons 80.0 (cons 65.0 (cons 83.0 (cons 83.0 (cons 58.0 (cons 32.0 (cons test_num nil))))))))  # "PASS: " + test_num
+  else
+    (print (cons 70.0 (cons 65.0 (cons 73.0 (cons 76.0 (cons 58.0 (cons 32.0 (cons test_num nil))))))))  # "FAIL: " + test_num
+) in
+
+# Test list equality
+let rec list_eq = (λl1. λl2.
+  if (and (null? l1) (null? l2)) then 1
+  else if (or (null? l1) (null? l2)) then 0
+  else if (eq? (car l1) (car l2)) then (list_eq (cdr l1) (cdr l2))
+  else 0
+) in
+
+let test_list = (λtest_num. λexpected. λactual.
+  let passed = (list_eq expected actual) in
+  if passed then
+    (print (cons 80.0 (cons 65.0 (cons 83.0 (cons 83.0 (cons 58.0 (cons 32.0 (cons test_num nil))))))))
+  else
+    (print (cons 70.0 (cons 65.0 (cons 73.0 (cons 76.0 (cons 58.0 (cons 32.0 (cons test_num nil))))))))
+) in
+
+# Print start message
+let start_msg = (print (cons 84.0 (cons 101.0 (cons 115.0 (cons 116.0 (cons 105.0 (cons 110.0 (cons 103.0 nil)))))))) in  # "Testing"
+
+# Test 1: Identity function
+let t1 = (test 49.0 42.0 (identity 42.0)) in
+
+# Test 2: Const function  
+let t2 = (test 50.0 10.0 ((const 10.0) 20.0)) in
+
+# Test 3: Compose function
+let add1 = (+ 1) in
+let mul2 = (* 2) in
+let composed = (compose add1 mul2) in
+let t3 = (test 51.0 9.0 (composed 4.0)) in
+
+# Test 4: Logical NOT
+let t4 = (test 52.0 0.0 (not 1.0)) in
+
+# Test 5: Logical AND
+let t5 = (test 53.0 1.0 (and 1.0 1.0)) in
+
+# Test 6: Max function
+let t6 = (test 54.0 10.0 (max 5.0 10.0)) in
+
+# Test 7: List null check
+let t7 = (test 55.0 1.0 (null? nil)) in
+
+# Test 8: List construction and access
+let sample_list = (cons 1.0 (cons 2.0 (cons 3.0 nil))) in
+let t8 = (test 56.0 1.0 (car sample_list)) in
+
+# Test 9: List take function
+let t9 = (test_list 57.0 (cons 1.0 (cons 2.0 nil)) (take 2 sample_list)) in
+
+# Test 10: List append
+let list1 = (cons 1.0 (cons 2.0 nil)) in
+let list2 = (cons 3.0 (cons 4.0 nil)) in
+let expected_append = (cons 1.0 (cons 2.0 (cons 3.0 (cons 4.0 nil)))) in
+let t10 = (test_list 58.0 expected_append (append list1 list2)) in
+
+# Test 11: String equality
+let hello1 = (cons 72.0 (cons 101.0 (cons 108.0 (cons 108.0 (cons 111.0 nil))))) in  # "Hello"
+let hello2 = (cons 72.0 (cons 101.0 (cons 108.0 (cons 108.0 (cons 111.0 nil))))) in  # "Hello"
+let t11 = (test 59.0 1.0 (string_eq hello1 hello2)) in
+
+# Test 12: Basic arithmetic
+let t12 = (test 60.0 7.0 ((+ 3.0) 4.0)) in
+
+# Test 13: Function application
+let double = (λx. (* x 2.0)) in
+let t13 = (test 61.0 20.0 (double 10.0)) in
+
+# Test 14: Conditional logic
+let conditional_result = (if 1.0 then 100.0 else 200.0) in
+let t14 = (test 62.0 100.0 conditional_result) in
+
+# Test 15: Nested function calls
+let nested_result = ((compose (* 2.0) (+ 1.0)) 5.0) in  # (5 + 1) * 2 = 12
+let t15 = (test 63.0 12.0 nested_result) in
+
+# Test 16: Recursion (factorial)
+let rec factorial = (λn. 
+  if (< n 2.0) then 1.0 
+  else (* n (factorial (- n 1.0)))
+) in
+let t16 = (test 64.0 120.0 (factorial 5.0)) in
+
+# Test 17: Higher-order functions
+let apply_twice = (λf. λx. (f (f x))) in
+let inc = (+ 1.0) in
+let t17 = (test 65.0 7.0 ((apply_twice inc) 5.0)) in
+
+# Test 18: List processing
+let numbers = (cons 1.0 (cons 2.0 (cons 3.0 nil))) in
+let double_list = (map (* 2.0) numbers) in
+let t18 = (test_list 66.0 (cons 2.0 (cons 4.0 (cons 6.0 nil))) double_list) in
+
+# Test 19: Mathematical functions
+let t19 = (test 67.0 1.0 (if (> (sqrt 4.0) 1.9) then 1.0 else 0.0)) in
+
+# Test 20: Differentiation (the killer feature!)
+let simple_func = (λx. (* x x)) in  # f(x) = x²
+let derivative_at_3 = (diff simple_func 3.0) in  # f'(3) should be 6
+let t20 = (test 68.0 1.0 (if (> derivative_at_3 5.5) then 1.0 else 0.0)) in  # Allow some numerical error
+
+# Print completion message
+let done_msg = (print (cons 68.0 (cons 111.0 (cons 110.0 (cons 101.0 nil))))) in  # "Done"
+
+# Return success
+1.0
