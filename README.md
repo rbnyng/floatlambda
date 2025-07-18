@@ -145,7 +145,7 @@ let sin_approx = λx.(- x (/ (* x (* x x)) 6)) in
 ```
 # Definite integral of x² from 0 to 3 (should be 9)
 let f = λx.(* x x) in
-(integrate3 f 0.0 3.0)                # → 9.0
+(integrate f 0.0 3.0)                 # → 9.0
 
 # Curried integration for reuse
 let integrate_from_zero = (integrate f 0.0) in
@@ -158,7 +158,7 @@ let area2 = (integrate_from_zero 4.0) in
 ```
 # Verify that differentiation and integration are inverses
 let f = λx.(* x x) in
-let F = λx.(integrate3 f 0.0 x) in    # Antiderivative
+let F = λx.(integrate f 0.0 x) in     # Antiderivative
 (diff F 5.0)                          # Should equal f(5) = 25.0
 ```
 
@@ -236,7 +236,7 @@ Everything is f64, trust.
 
 ## Getting Started
 
-FloatLambda includes a REPL:
+FloatLambda includes a REPL for interactive exploration:
 
 ```bash
 $ float_lambda
@@ -249,3 +249,23 @@ Result: 3.0 (1 objects alive)
 Parsed: let x = 42 in (+ x 8)  
 Result: 50.0 (1 objects alive)
 ```
+
+Or run scripts directly:
+
+```bash
+$ float_lambda factorial.fl
+```
+
+Example script (`factorial.fl`):
+```
+# Calculate factorial of 10
+let rec factorial = λn.
+    if (< n 2) then 1 
+    else (* n (factorial (- n 1)))
+in 
+let result = (factorial 10) in
+(print "Result: ")
+(print result)
+```
+
+The `:examples` command in the REPL shows more usage patterns.
