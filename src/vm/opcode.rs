@@ -54,6 +54,7 @@ pub enum OpCode {
     // --- Functions ---
     OpCall,
     OpClosure, 
+    OpTailCall, 
     
     // --- Jumps ---
     /// Unconditionally jumps forward by a 16-bit offset.

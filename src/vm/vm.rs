@@ -1,3 +1,5 @@
+// src/vm/vm.rs
+
 use std::collections::HashMap;
 use std::rc::Rc;
 use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject, NIL_VALUE};
@@ -28,7 +30,7 @@ pub struct VM<'a> {
     frames: Vec<CallFrame>,
     stack: Vec<f64>,
     globals: HashMap<String, f64>,
-    open_upvalues: Vec<u64>, 
+    open_upvalues: Vec<u64>,
 }
 
 /// The main entry point to run code. It handles parsing, compiling, and execution.
@@ -57,7 +59,7 @@ impl<'a> VM<'a> {
             frames: Vec::with_capacity(64),
             stack: Vec::with_capacity(256),
             globals: HashMap::new(),
-            open_upvalues: Vec::new(), 
+            open_upvalues: Vec::new(),
         }
     }
 
@@ -130,7 +132,6 @@ impl<'a> VM<'a> {
                 }
                 OpCode::OpGetGlobal => {
                     let name_idx = self.read_byte() as usize;
-                    // Re-fetch the chunk here as well
                     let func = match self.heap.get(func_id).unwrap() {
                         HeapObject::Function(f) => f,
                         _ => unreachable!(),
@@ -143,14 +144,14 @@ impl<'a> VM<'a> {
                 }
                 OpCode::OpDefineGlobal => {
                     let name_idx = self.read_byte() as usize;
-                    let name = { // Scoped borrow and clone
+                    let name = {
                         let func = match self.heap.get(func_id).unwrap() {
                              HeapObject::Function(f) => f, _ => unreachable!(),
                         };
                         func.chunk.names[name_idx].clone()
                     };
                     let val = self.pop_stack()?;
-                    self.globals.insert(name, val); // Use cloned name
+                    self.globals.insert(name, val);
                 }
                 OpCode::OpJump => {
                     let offset = self.read_short();
@@ -175,15 +176,48 @@ impl<'a> VM<'a> {
                 OpCode::OpSetLocal => {
                     let slot = self.read_byte() as usize;
                     let frame = self.frames.last().unwrap();
-                    // Peek the value from the top of the stack and set it in the slot.
-                    // This doesn't pop, as assignment can be an expression.
                     self.stack[frame.stack_slot + slot] = *self.stack.last().unwrap();
                 }
                 OpCode::OpCall => {
                     let arg_count = self.read_byte() as usize;
-                    // The function to call is on the stack, just below the arguments.
                     let func_to_call_val = self.stack[self.stack.len() - 1 - arg_count];
                     self.call_value(func_to_call_val, arg_count)?;
+                }
+                OpCode::OpTailCall => {
+                    let arg_count = self.read_byte() as usize;
+                    let func_val = self.stack[self.stack.len() - 1 - arg_count];
+                    let new_closure_id = decode_heap_pointer(func_val)
+                        .ok_or_else(|| InterpretError::Runtime("Can only call functions.".to_string()))?;
+
+                    let arity = {
+                        let new_closure = match self.heap.get(new_closure_id) {
+                            Some(HeapObject::Closure(c)) => c,
+                            _ => return Err(InterpretError::Runtime("Can only call functions.".to_string())),
+                        };
+                        let new_func = match self.heap.get(new_closure.func_id) {
+                            Some(HeapObject::Function(f)) => f,
+                            _ => return Err(InterpretError::Runtime("Closure points to a non-function.".to_string())),
+                        };
+                        new_func.arity
+                    };
+                    if arg_count != arity {
+                        return Err(InterpretError::Runtime(format!("Expected {} arguments but got {}.", arity, arg_count)));
+                    }
+
+                    // Copy the stack slot before the immutable borrow of self via `frame` ends.
+                    let stack_slot = self.frames.last().unwrap().stack_slot;
+                    self.close_upvalues(stack_slot);
+
+                    // Overwrite the old function and its args with the new ones.
+                    for i in 0..=arg_count {
+                        self.stack[stack_slot + i] = self.stack[self.stack.len() - 1 - arg_count + i];
+                    }
+                    self.stack.truncate(stack_slot + arg_count + 1);
+
+                    // Update the current frame to point to the new function.
+                    let current_frame = self.frames.last_mut().unwrap();
+                    current_frame.closure_id = new_closure_id;
+                    current_frame.ip = 0;
                 }
                 OpCode::OpClosure => {
                     let func_id = decode_heap_pointer(self.read_constant()?).unwrap();

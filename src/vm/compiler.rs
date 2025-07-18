@@ -36,7 +36,8 @@ struct Compiler {
 
 pub fn compile(term: &Term, heap: &mut Heap) -> Result<Function, CompileError> {
     let mut compiler = Compiler::new(None, "<script>".to_string(), 0);
-    compiler.compile_term(term, heap)?;
+    // The top-level of a script is considered a tail position.
+    compiler.compile_term(term, heap, true)?;
     Ok(compiler.end_compiler())
 }
 
@@ -51,16 +52,16 @@ impl Compiler {
         }
     }
 
-    fn compile_term(&mut self, term: &Term, heap: &mut Heap) -> Result<(), CompileError> {
+    fn compile_term(&mut self, term: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
         match term {
             Term::Float(n) => self.emit_constant(*n),
             Term::Nil => self.emit_opcode(OpCode::OpNil),
             Term::Builtin(op) => self.compile_builtin(op)?,
             Term::Lam(p, b) => self.compile_lambda(p, b, heap)?,
-            Term::App(f, a) => self.compile_app(f, a, heap)?,
-            Term::If(c, t, e) => self.compile_if(c, t, e, heap)?,
-            Term::Let(n, v, b) => self.compile_let(n, v, b, heap)?,
-            Term::LetRec(n, v, b) => self.compile_let_rec(n, v, b, heap)?,
+            Term::App(f, a) => self.compile_app(f, a, heap, is_tail)?,
+            Term::If(c, t, e) => self.compile_if(c, t, e, heap, is_tail)?,
+            Term::Let(n, v, b) => self.compile_let(n, v, b, heap, is_tail)?,
+            Term::LetRec(n, v, b) => self.compile_let_rec(n, v, b, heap, is_tail)?,
             Term::Var(name) => self.compile_variable(name)?,
         }
         Ok(())
@@ -72,7 +73,8 @@ impl Compiler {
         
         func_compiler.begin_scope();
         func_compiler.add_local(param.clone());
-        func_compiler.compile_term(body, heap)?;
+        // The body of a function is always in a tail position.
+        func_compiler.compile_term(body, heap, true)?;
         let mut function = func_compiler.end_compiler();
         let upvalues = func_compiler.upvalues;
         function.upvalue_count = upvalues.len();
@@ -104,67 +106,74 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_app(&mut self, func: &Term, arg: &Term, heap: &mut Heap) -> Result<(), CompileError> {
-        // Look at the base of the application chain.
+    fn compile_app(&mut self, func: &Term, arg: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
         let mut args = vec![arg];
         let mut current_func = func;
         while let Term::App(f, a) = current_func {
             args.push(a);
             current_func = f;
         }
-    
-        // --- The Hybrid Logic ---
+        
         if let Term::Builtin(op) = current_func {
-            // CASE 1: The base is a built-in operator.
-            // Compile all arguments first, then emit the single operator instruction.
             for arg in args.iter().rev() {
-                self.compile_term(arg, heap)?;
+                self.compile_term(arg, heap, false)?;
             }
             self.compile_builtin(op)?;
         } else {
-            // CASE 2: The base is a user-defined function or some other expression.
-            // This is a standard curried call. Do NOT flatten the arguments.
-            // Compile the original, un-flattened function and argument.
-            self.compile_term(func, heap)?;
-            self.compile_term(arg, heap)?;
-            self.emit_opcode(OpCode::OpCall);
-            self.emit_byte(1);
+            // A user function or other expression is being called.
+            // Compile the function and argument, which are never in a tail position themselves.
+            self.compile_term(func, heap, false)?;
+            self.compile_term(arg, heap, false)?;
+            
+            // If the application itself is in a tail position, emit OpTailCall.
+            if is_tail {
+                self.emit_opcode(OpCode::OpTailCall);
+            } else {
+                self.emit_opcode(OpCode::OpCall);
+            }
+            self.emit_byte(1); // Arg count is always 1 for curried calls.
         }
-    
+        
         Ok(())
     }
         
-    fn compile_let(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap) -> Result<(), CompileError> {
-        self.compile_term(value, heap)?;
+    fn compile_let(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
+        // The value being bound is not in a tail position.
+        self.compile_term(value, heap, false)?;
         if self.scope_depth > 0 { self.add_local(name.to_string()); } 
         else {
             let name_idx = self.add_name_constant(name.to_string());
             self.emit_opcode(OpCode::OpDefineGlobal); self.emit_byte(name_idx as u8);
         }
-        self.compile_term(body, heap)?;
+        // The body's tail status depends on the let statement's context.
+        self.compile_term(body, heap, is_tail)?;
         Ok(())
     }
     
-    fn compile_let_rec(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap) -> Result<(), CompileError> {
+    fn compile_let_rec(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
         if self.scope_depth > 0 { self.add_local(name.to_string()); }
-        self.compile_term(value, heap)?;
+        // The recursive value is not in a tail position.
+        self.compile_term(value, heap, false)?;
         if self.scope_depth == 0 {
             let name_idx = self.add_name_constant(name.to_string());
             self.emit_opcode(OpCode::OpDefineGlobal); self.emit_byte(name_idx as u8);
         }
-        self.compile_term(body, heap)?;
+        // The body's tail status depends on the let rec statement's context.
+        self.compile_term(body, heap, is_tail)?;
         Ok(())
     }
 
-    fn compile_if(&mut self, cond: &Term, then_b: &Term, else_b: &Term, heap: &mut Heap) -> Result<(), CompileError> {
-        self.compile_term(cond, heap)?;
+    fn compile_if(&mut self, cond: &Term, then_b: &Term, else_b: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
+        // The condition is never in a tail position.
+        self.compile_term(cond, heap, false)?;
         let else_jump = self.emit_jump(OpCode::OpJumpIfFalse);
         self.emit_opcode(OpCode::OpPop);
-        self.compile_term(then_b, heap)?;
+        // The then/else branches are in a tail position if the `if` is.
+        self.compile_term(then_b, heap, is_tail)?;
         let end_jump = self.emit_jump(OpCode::OpJump);
         self.patch_jump(else_jump)?;
         self.emit_opcode(OpCode::OpPop);
-        self.compile_term(else_b, heap)?;
+        self.compile_term(else_b, heap, is_tail)?;
         self.patch_jump(end_jump)?;
         Ok(())
     }
