@@ -56,10 +56,9 @@ mod tests {
 
     #[test]
     fn test_fuzzy_eq() {
-        // We need to call the function from the evaluator module now.
         assert!((evaluator::fuzzy_eq(1.0, 1.0) - 1.0).abs() < 0.001);
         assert!(evaluator::fuzzy_eq(1.0, 2.0) < 1.0);
-        assert!(evaluator::fuzzy_eq(1000.0, 1001.0) < 0.5);
+        assert!(evaluator::fuzzy_eq(1000.0, 1001.0) > 0.99); // Should be very close to 1
     }
 
     #[test]
@@ -175,10 +174,12 @@ mod tests {
     #[test]
     fn test_improved_fuzzy_eq() {
         assert_eq!(evaluator::fuzzy_eq(1.0, 1.0), 1.0);
-        assert!((evaluator::fuzzy_eq(1.0, 2.0) - 0.36787944117144233).abs() < 0.0001);
-        assert!((evaluator::fuzzy_eq(1000.0, 1001.0) - 0.36787944117144233).abs() < 0.0001); // e^(-1) for diff of 1
+        // exp(-1.0 / 2.0) = exp(-0.5)
+        assert!((evaluator::fuzzy_eq(1.0, 2.0) - 0.60653).abs() < 0.0001);
+        // exp(-1.0 / 1001.0)
+        assert!((evaluator::fuzzy_eq(1000.0, 1001.0) - 0.99900).abs() < 0.0001);
     }
-    
+
     #[test]
     fn test_robust_parser_keywords() {
         // Test that "iff" is parsed as a variable (not the "if" keyword)
@@ -266,11 +267,11 @@ mod tests {
     fn test_complex_expression_with_let() {
         let code = "let a = 10 in let b = 20 in if ((== a) 10.1) then b else a";
         let result = eval_ok(code);
-        // fuzzy_eq(10.0, 10.1) is approx 0.904837
-        // 0.904837 * 20.0 + (1.0 - 0.904837) * 10.0 = 18.09674 + 0.95163 = 19.04837
-        assert!((result - 19.04837).abs() < 0.0001);
+        // fuzzy_eq(10.0, 10.1) is exp(-0.1 / 10.1) approx 0.99014
+        // 0.99014 * 20.0 + (1.0 - 0.99014) * 10.0 = 19.8028 + 0.0986 = 19.9014
+        assert!((result - 19.9014).abs() < 0.0001);
     }
-
+    
     // --- Complex Data Structures ---
 
     #[test]

@@ -659,6 +659,9 @@ fn execute_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalE
 }
 
 pub fn fuzzy_eq(x: f64, y: f64) -> f64 {
-    let scale_factor = 1.0;
-    (-((x - y).abs() / scale_factor)).exp()
+    let diff = (x - y).abs();
+    // Use max of absolute values of x and y, but at least 1.0 to avoid inflating the result
+    // for small numbers and to prevent division by zero.
+    let scale_factor = x.abs().max(y.abs()).max(1.0);
+    (-(diff / scale_factor)).exp()
 }
