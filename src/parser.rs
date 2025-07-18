@@ -86,6 +86,7 @@ impl Parser {
         match self.current_char() {
             Some('(') => self.parse_application(),
             Some('λ') | Some('\\') => self.parse_lambda(),
+            Some('"') => self.parse_string_literal(),  
             Some(c) if c.is_digit(10) || (c == '-' && self.peek_char().map_or(false, |c| c.is_digit(10))) => self.parse_number(),
             Some(c) if c.is_alphabetic() => {
                 let word = self.peek_exact_word();
@@ -342,6 +343,65 @@ impl Parser {
         } else {
             Ok(name)
         }
+    }
+
+    fn chars_to_cons_chain(chars: Vec<f64>) -> Term {
+        let mut result = Term::Nil;
+        for &char_code in chars.iter().rev() {
+            result = Term::App(
+                Box::new(Term::App(
+                    Box::new(Term::Builtin("cons".to_string())),
+                    Box::new(Term::Float(char_code))
+                )),
+                Box::new(result)
+            );
+        }
+        result
+    }
+
+    fn parse_string_literal(&mut self) -> Result<Term, ParseError> {
+        let start_line = self.line;
+        let start_col = self.col;
+        
+        self.advance(); // consume opening "
+        let mut chars = Vec::new();
+        
+        loop {
+            match self.current_char() {
+                Some('"') => {
+                    self.advance(); // consume closing "
+                    break;
+                }
+                Some('\\') => {
+                    // Handle escape sequences
+                    self.advance();
+                    match self.current_char() {
+                        Some('n') => { chars.push(10.0); self.advance(); }   // \n
+                        Some('t') => { chars.push(9.0); self.advance(); }    // \t
+                        Some('r') => { chars.push(13.0); self.advance(); }   // \r
+                        Some('\\') => { chars.push(92.0); self.advance(); }  // \\
+                        Some('"') => { chars.push(34.0); self.advance(); }   // \"
+                        Some(c) => return Err(self.error(ParseErrorKind::InvalidSyntax(
+                            format!("Unknown escape sequence: \\{}", c)))),
+                        None => return Err(self.error(ParseErrorKind::UnexpectedEnd)),
+                    }
+                }
+                Some(c) => {
+                    chars.push(c as u32 as f64);
+                    self.advance();
+                }
+                None => {
+                    return Err(ParseError {
+                        kind: ParseErrorKind::UnexpectedEnd,
+                        line: start_line,
+                        col: start_col,
+                    });
+                }
+            }
+        }
+        
+        // Build the cons chain
+        Ok(Self::chars_to_cons_chain(chars))
     }
 }
 

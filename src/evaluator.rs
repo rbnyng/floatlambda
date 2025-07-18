@@ -12,8 +12,8 @@ use crate::memory::{
 use crate::ml::{self}; 
 use crate::math; 
 
-/// A helper function to apply a FloatLambda function (represented by its f64 value)
-/// to an argument. This is used by Term::App and our new list built-ins.
+// A helper function to apply a FloatLambda function (represented by its f64 value)
+// to an argument. This is used by Term::App and our new list built-ins.
 pub fn apply_function(func_val: f64, arg_val: f64, heap: &mut Heap) -> Result<f64, EvalError> {
 
     // println!("apply_function called with func_val={}, arg_val={}", func_val, arg_val);
@@ -71,25 +71,25 @@ pub fn apply_function(func_val: f64, arg_val: f64, heap: &mut Heap) -> Result<f6
 // --- CPS Trampoline Helpers ---
 #[derive(Debug)]
 enum Continuation {
-    /// Sentinel value indicating the end of the computation.
+    // Sentinel value indicating the end of the computation.
     Done,
-    /// Finished evaluating the value of a let, now evaluate the body.
+    // Finished evaluating the value of a let, now evaluate the body.
     Let { name: String, body: Box<Term>, env: Environment },
-    /// Finished evaluating the value of a let rec, now evaluate the body.
+    // Finished evaluating the value of a let rec, now evaluate the body.
     LetRec { name: String, body: Box<Term>, env: Environment },
-    /// Finished evaluating the function part of an App, now evaluate the argument.
+    // Finished evaluating the function part of an App, now evaluate the argument.
     AppFunc { arg: Box<Term>, env: Environment },
-    /// Finished evaluating the argument part of an App, now apply the function to the argument.
+    // Finished evaluating the argument part of an App, now apply the function to the argument.
     AppArg { func_val: f64 },
-    /// Finished evaluating the cond of an If, now evaluate the branches.
+    // Finished evaluating the cond of an If, now evaluate the branches.
     IfCond { then_branch: Box<Term>, else_branch: Box<Term>, env: Environment },
-    /// (For fuzzy If) Finished then branch, now evaluate else branch.
+    // (For fuzzy If) Finished then branch, now evaluate else branch.
     IfThen { else_branch: Box<Term>, env: Environment, cond_val: f64 },
-    /// (For fuzzy If) Finished else branch, now compute the final blend.
+    // (For fuzzy If) Finished else branch, now compute the final blend.
     IfElse { then_val: f64, cond_val: f64 },
 }
 
-/// Helper for let rec to patch a closure's environment with its own pointer.
+// Helper for let rec to patch a closure's environment with its own pointer.
 fn patch_recursively(val: f64, name: &str, final_val: f64, heap: &mut Heap) {
     let mut pair_to_trace: Option<(f64, f64)> = None;
 
@@ -126,13 +126,13 @@ fn patch_recursively(val: f64, name: &str, final_val: f64, heap: &mut Heap) {
 
 // --- The Evaluator ---
 impl Term {
-    /// Evaluates a Term using a trampoline to implement Continuation-Passing Style (CPS).
-    /// This version uses a two-phase loop to correctly manage evaluation and continuation.
+    // Evaluates a Term using a trampoline to implement Continuation-Passing Style (CPS).
+    // This version uses a two-phase loop to correctly manage evaluation and continuation.
     pub fn eval(&self, env: &Environment, heap: &mut Heap) -> Result<f64, EvalError> {
         let mut current_term = self.clone();
         let mut current_env = env.clone();
         let mut cont_stack: Vec<Continuation> = vec![Continuation::Done];
-        let mut result_val: f64 = 0.0;
+        let mut result_val: f64;
 
         'trampoline: loop {
             // --- PHASE 1: EVALUATION ---
