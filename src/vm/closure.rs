@@ -9,5 +9,5 @@ pub enum Upvalue {
 #[derive(Debug, Clone)]
 pub struct Closure {
     pub func_id: u64,
-    pub upvalues: Rc<Vec<Upvalue>>,
+    pub upvalues: Rc<Vec<u64>>, 
 }

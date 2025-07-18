@@ -3,7 +3,6 @@ use std::rc::Rc;
 use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject, NIL_VALUE};
 use crate::vm::closure::{Closure as VMClosure, Upvalue};
 use crate::vm::compiler::{compile, CompileError};
-use crate::vm::function::Function;
 use crate::vm::opcode::OpCode;
 
 #[derive(Debug)]
@@ -40,11 +39,13 @@ pub fn interpret(source: &str, heap: &mut Heap) -> Result<f64, InterpretError> {
     
     let main_id = heap.register(HeapObject::Function(main_func));
     let main_closure = VMClosure { func_id: main_id, upvalues: Rc::new(Vec::new()) };
-    let _main_closure_id = heap.register(HeapObject::Closure(main_closure));
+
+    let main_closure_id = heap.register(HeapObject::Closure(main_closure));
 
     let mut vm = VM::new(heap);
-    vm.stack.push(encode_heap_pointer(main_id)); // The function itself is at slot 0.
-    vm.call_value(encode_heap_pointer(main_id), 0)?; // Call the top-level script as a function.
+    
+    vm.stack.push(encode_heap_pointer(main_closure_id));
+    vm.call_value(encode_heap_pointer(main_closure_id), 0)?;
 
     vm.run()
 }
@@ -286,9 +287,13 @@ impl<'a> VM<'a> {
 
     fn read_byte(&mut self) -> u8 {
         let frame = self.frames.last_mut().unwrap();
-        let func = match self.heap.get(frame.func_id).unwrap() {
+        let closure = match self.heap.get(frame.closure_id).unwrap() {
+            HeapObject::Closure(c) => c,
+            _ => panic!("Invalid state in read_byte: expected closure"),
+        };
+        let func = match self.heap.get(closure.func_id).unwrap() {
             HeapObject::Function(f) => f,
-            _ => panic!("Invalid state in read_byte"),
+            _ => panic!("Invalid state in read_byte: expected function"),
         };
         let byte = func.chunk.code[frame.ip];
         frame.ip += 1;
@@ -297,9 +302,13 @@ impl<'a> VM<'a> {
 
     fn read_short(&mut self) -> usize {
         let frame = self.frames.last_mut().unwrap();
-        let func = match self.heap.get(frame.func_id).unwrap() {
+        let closure = match self.heap.get(frame.closure_id).unwrap() {
+            HeapObject::Closure(c) => c,
+            _ => panic!("Invalid state in read_short: expected closure"),
+        };
+        let func = match self.heap.get(closure.func_id).unwrap() {
             HeapObject::Function(f) => f,
-            _ => panic!("Invalid state in read_short"),
+            _ => panic!("Invalid state in read_short: expected function"),
         };
         frame.ip += 2;
         let high = func.chunk.code[frame.ip - 2] as usize;

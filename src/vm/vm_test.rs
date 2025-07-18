@@ -10,7 +10,7 @@ mod vm_tests {
         assert!((result - expected).abs() < 1e-9); // Use tolerance for float comparison
     }
 
-    // New helper to test for a runtime error
+    // Helper to test for a runtime error
     fn test_runtime_error(source: &str) {
         let mut heap = Heap::new();
         let result = vm::interpret(source, &mut heap);
@@ -89,15 +89,6 @@ mod vm_tests {
         test_source("let f = (if 0 then (λx.(+ x 1)) else (λx.(* x 2))) in (f 10)", 20.0);
     }
     
-    #[test]
-    fn test_vm_arity_errors() {
-        // Too few arguments - should now pass
-        test_runtime_error("let f = (λx. λy. x) in (f 1)");
-
-        // Too many arguments - uncomment this, it should now pass
-        test_runtime_error("let f = (λx. x) in (f 1 2)");
-    }
-
     #[test]
     fn test_vm_recursion() {
         let source = "

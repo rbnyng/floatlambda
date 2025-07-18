@@ -105,25 +105,35 @@ impl Compiler {
     }
 
     fn compile_app(&mut self, func: &Term, arg: &Term, heap: &mut Heap) -> Result<(), CompileError> {
+        // Look at the base of the application chain.
         let mut args = vec![arg];
         let mut current_func = func;
         while let Term::App(f, a) = current_func {
             args.push(a);
             current_func = f;
         }
-
+    
+        // --- The Hybrid Logic ---
         if let Term::Builtin(op) = current_func {
-            for arg in args.iter().rev() { self.compile_term(arg, heap)?; }
+            // CASE 1: The base is a built-in operator.
+            // Compile all arguments first, then emit the single operator instruction.
+            for arg in args.iter().rev() {
+                self.compile_term(arg, heap)?;
+            }
             self.compile_builtin(op)?;
         } else {
-            self.compile_term(current_func, heap)?;
-            for arg in args.iter().rev() { self.compile_term(arg, heap)?; }
+            // CASE 2: The base is a user-defined function or some other expression.
+            // This is a standard curried call. Do NOT flatten the arguments.
+            // Compile the original, un-flattened function and argument.
+            self.compile_term(func, heap)?;
+            self.compile_term(arg, heap)?;
             self.emit_opcode(OpCode::OpCall);
-            self.emit_byte(args.len() as u8);
+            self.emit_byte(1);
         }
+    
         Ok(())
     }
-    
+        
     fn compile_let(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap) -> Result<(), CompileError> {
         self.compile_term(value, heap)?;
         if self.scope_depth > 0 { self.add_local(name.to_string()); } 
