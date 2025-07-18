@@ -54,7 +54,18 @@ The unique feature of FloatLambda is its **continuous truth values**. Instead of
 ```
 if 0.7 then 100 else 200                # → 130.0
 # Calculation: 0.7 * 100 + 0.3 * 200 = 70 + 60 = 130
+
+# Any binary choice can be made continuous
+let continuous_choice = (λcondition. λoption_a. λoption_b.
+  if condition then option_a else option_b
+)
 ```
+
+Works for:
+ - Values: (continuous_choice 0.7 100 200)
+ - Functions: (continuous_choice 0.7 (λx.x) (λx.(* x 2)))
+ - Evaluations: (continuous_choice 0.7 (eval expr_a) (eval expr_b))
+ - Transformations: (continuous_choice 0.7 (transform expr) expr)
 
 ### Fuzzy Logic Operators
 ```
