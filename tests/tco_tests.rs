@@ -1,27 +1,8 @@
 // tests/tco_tests.rs
 
-use float_lambda::{parse, Heap};
-use std::collections::HashMap;
-use std::rc::Rc;
 use std::time::Instant;
-
-fn eval_ok(input: &str) -> f64 {
-    let term = parse(input).unwrap();
-    let mut heap = Heap::new();
-    term.eval(&Rc::new(HashMap::new()), &mut heap).unwrap()
-}
-
-fn eval_with_timeout(input: &str, timeout_ms: u64) -> Result<f64, String> {
-    let start = Instant::now();
-    let result = eval_ok(input);
-    let duration = start.elapsed();
-    
-    if duration.as_millis() > timeout_ms as u128 {
-        Err(format!("Evaluation took too long: {}ms", duration.as_millis()))
-    } else {
-        Ok(result)
-    }
-}
+mod test_utils;
+use test_utils::*;
 
 #[cfg(test)]
 mod tco_tests {
