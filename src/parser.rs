@@ -301,7 +301,7 @@ impl Parser {
             "fuzzy_and" | "fuzzy_or" | "rem" | "div" |
             "print" | "read-char" | "read-line" |
             "length" | "map" | "filter" | "foldl" |
-            "diff" | "integrate" | "integrate3"
+            "diff" | "integrate"
             => Ok(Term::Builtin(name)),
             _ => Ok(Term::Var(name)),
         }

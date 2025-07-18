@@ -252,10 +252,10 @@ fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
         => Ok(1),
         // Binary
         "+" | "-" | "*" | "/" | "==" | "eq?" | "<" | ">" | "<=" | ">=" | "min" | "max" |
-        "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" | "map" | "filter" | "diff" | "integrate"
+        "cons" | "fuzzy_and" | "fuzzy_or" | "rem" | "div" | "map" | "filter" | "diff"
         => Ok(2),
         // Ternary
-        "foldl" | "integrate3" | "integrate_partial" => Ok(3),
+        "foldl" | "integrate" => Ok(3),
         _ => Err(EvalError::TypeError(format!("Unknown builtin: {}", op))),
     }
 }
@@ -407,37 +407,11 @@ fn execute_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalE
             let point = args[1];
             numerical_derivative(func, point, heap)
         }
-        "integrate3" => {
+        "integrate" => {
             let func = args[0];
             let a = args[1];
             let b = args[2];
             numerical_integration(func, a, b, heap)
-        }
-        "integrate" => {
-            let func = args[0];
-            let a = args[1];
-            let integration_closure = BuiltinClosure {
-                op: "integrate_partial".to_string(),
-                arity: 3,
-                args: vec![func, a],
-            };
-            let id = heap.register(HeapObject::BuiltinFunc(integration_closure));
-            Ok(encode_heap_pointer(id))
-        }
-        "integrate_partial" => {
-            let func = args[0];  // f
-            let a = args[1];     // a  
-            let b = args[2];     // b
-            // Test if the function works before passing to numerical_integration
-            println!("Testing function call with x=1.0:");
-            match apply_function(func, 1.0, heap) {
-                Ok(val) => println!("f(1.0) = {}", val),
-                Err(e) => println!("ERROR calling f(1.0): {}", e),
-            }
-            
-            let result = numerical_integration(func, a, b, heap);
-            println!("numerical_integration returned: {:?}", result);
-            result
         }
 
         // Standard arithmetic/logic (no heap access)
