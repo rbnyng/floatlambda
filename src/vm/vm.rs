@@ -3,6 +3,7 @@
 use crate::memory::NIL_VALUE;
 use crate::vm::chunk::Chunk;
 use crate::vm::opcode::OpCode;
+use std::collections::HashMap; 
 
 // Combined result type for the VM.
 #[derive(Debug)]
@@ -22,6 +23,7 @@ struct VM<'a> {
     chunk: &'a Chunk,
     ip: usize, // Instruction Pointer
     stack: Vec<f64>,
+    globals: HashMap<String, f64>, 
 }
 
 impl<'a> VM<'a> {
@@ -30,6 +32,7 @@ impl<'a> VM<'a> {
             chunk,
             ip: 0,
             stack: Vec::with_capacity(256), // Pre-allocate some stack space
+            globals: HashMap::new(), 
         }
     }
 
@@ -72,7 +75,61 @@ impl<'a> VM<'a> {
                         _ => unreachable!(), // Should not happen
                     }
                 }
-                // Other opcodes will be implemented in later phases.
+                OpCode::OpDefineGlobal => {
+                    let name_idx = self.chunk.code[self.ip] as usize;
+                    self.ip += 1;
+                    let name = &self.chunk.names[name_idx];
+                    // The value is on top of the stack.
+                    // We use peek because a let expression's value is the result of its body,
+                    // not the assignment. The value remains on the stack for the next expression.
+                    if let Some(val) = self.stack.last() {
+                         self.globals.insert(name.clone(), *val);
+                         // After defining, we pop the value off. The result of a let is its body.
+                         self.pop_stack()?;
+                    } else {
+                        return Err(InterpretError::RuntimeError("Stack empty on global define.".to_string()));
+                    }
+                }
+                OpCode::OpGetGlobal => {
+                    let name_idx = self.chunk.code[self.ip] as usize;
+                    self.ip += 1;
+                    let name = &self.chunk.names[name_idx];
+                    match self.globals.get(name) {
+                        Some(val) => self.stack.push(*val),
+                        None => {
+                            return Err(InterpretError::RuntimeError(format!(
+                                "Undefined global variable '{}'.",
+                                name
+                            )));
+                        }
+                    }
+                }
+                OpCode::OpJump => {
+                    let offset = self.read_short();
+                    self.ip += offset;
+                }
+                OpCode::OpJumpIfFalse => {
+                    let offset = self.read_short();
+                    // Peek at the condition value without popping it yet.
+                    if let Some(&val) = self.stack.last() {
+                        if val == 0.0 || val == NIL_VALUE {
+                            self.ip += offset;
+                        }
+                    }
+                    // The condition value is no longer needed after the check.
+                    self.pop_stack()?;
+                }
+                OpCode::OpGreater | OpCode::OpLess | OpCode::OpEqual => {
+                    let b = self.pop_stack()?;
+                    let a = self.pop_stack()?;
+                    let result = match op {
+                        OpCode::OpGreater => a > b,
+                        OpCode::OpLess => a < b,
+                        OpCode::OpEqual => a.to_bits() == b.to_bits(), // Strict bitwise eq?
+                        _ => unreachable!(),
+                    };
+                    self.stack.push(if result { 1.0 } else { 0.0 });
+                }
                 _ => {
                     return Err(InterpretError::RuntimeError(format!(
                         "Unknown opcode {:?}",
@@ -81,6 +138,14 @@ impl<'a> VM<'a> {
                 }
             }
         }
+    }
+
+    // Reads the next two bytes from the chunk as a u16 offset.
+    fn read_short(&mut self) -> usize {
+        self.ip += 2;
+        let high = self.chunk.code[self.ip - 2] as usize;
+        let low = self.chunk.code[self.ip - 1] as usize;
+        (high << 8) | low
     }
 
     // Helper to pop from the stack, returning a runtime error on underflow.

@@ -8,11 +8,11 @@ pub enum OpCode {
     /// The operand is a single byte representing the index in the pool.
     OpConstant,
 
-    /// Pushes `nil` (-inf) onto the stack.
+    /// Pushes nil (-inf) onto the stack.
     OpNil,
-    /// Pushes `1.0` (true) onto the stack.
+    /// Pushes 1.0 (true) onto the stack.
     OpTrue,
-    /// Pushes `0.0` (false) onto the stack.
+    /// Pushes 0.0 (false) onto the stack.
     OpFalse,
 
     // --- Unary Operations ---
@@ -32,6 +32,20 @@ pub enum OpCode {
     OpEqual,
     OpGreater,
     OpLess,
+
+    // --- Variables ---
+    /// Defines a new global variable. Operand is an index into the chunk's name pool.
+    OpDefineGlobal,
+    /// Pushes the value of a global variable onto the stack.
+    OpGetGlobal,
+    /// Sets the value of an existing global variable.
+    OpSetGlobal, // We won't implement this yet, but it's good to define.
+    
+    // --- Jumps ---
+    /// Unconditionally jumps forward by a 16-bit offset.
+    OpJump,
+    /// Jumps forward by a 16-bit offset if the top of the stack is falsey (0.0 or nil).
+    OpJumpIfFalse,
 
     // --- Control Flow ---
     /// Marks the end of a function's execution.
