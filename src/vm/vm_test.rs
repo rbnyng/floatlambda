@@ -97,4 +97,14 @@ mod vm_tests {
         // Too many arguments - uncomment this, it should now pass
         test_runtime_error("let f = (λx. x) in (f 1 2)");
     }
+
+    #[test]
+    fn test_vm_recursion() {
+        let source = "
+            let rec factorial = (λn. 
+                if (< n 2) then 1 
+                else (* n (factorial (- n 1)))
+            ) in (factorial 5)";
+        test_source(source, 120.0);
+    }
 }

@@ -19,6 +19,8 @@ pub enum CompileError {
 struct Local {
     name: String,
     depth: usize,
+    /// Is this local captured by a closure?
+    is_captured: bool, // We will need this for closures
 }
 
 /// The main entry point for compilation.
@@ -39,7 +41,7 @@ impl Compiler {
     fn new(name: String, arity: usize) -> Self {
         Compiler {
             function: Function { name, arity, ..Default::default() },
-            locals: vec![Local { name: "".to_string(), depth: 0 }],
+            locals: vec![Local { name: "".to_string(), depth: 0, is_captured: false }],
             scope_depth: 0,
         }
     }
@@ -71,6 +73,27 @@ impl Compiler {
                 }
                 self.compile_term(body, heap)?;
             }
+
+            Term::LetRec(name, value, body) => {
+                // For a recursive function, we create a variable for it first.
+                if self.scope_depth > 0 {
+                    self.add_local(name.clone());
+                }
+                
+                // Then compile the function, which can now refer to its own name.
+                self.compile_term(value, heap)?;
+
+                // Now define it in the scope.
+                if self.scope_depth == 0 {
+                    let name_idx = self.add_name_constant(name.clone());
+                    self.emit_opcode(OpCode::OpDefineGlobal);
+                    self.emit_byte(name_idx as u8);
+                }
+                // For locals, the value is already on the stack where it needs to be.
+                
+                self.compile_term(body, heap)?;
+            }
+            
             Term::If(condition, then_b, else_b) => self.compile_if(condition, then_b, else_b, heap)?,
 
             Term::App(func, arg) => {
@@ -100,7 +123,7 @@ impl Compiler {
                     self.emit_byte(args.len() as u8);
                 }
             }
-            
+
             Term::Lam(param, body) => {
                 // Count the arity of the curried function
                 let mut params = vec![param.clone()];
@@ -131,7 +154,7 @@ impl Compiler {
                 self.emit_byte(const_idx as u8);
             }
 
-            _ => return Err(CompileError::UnsupportedExpression(format!("{:?}", term))),
+            // _ => return Err(CompileError::UnsupportedExpression(format!("{:?}", term))),
         }
         Ok(())
     }
@@ -183,7 +206,13 @@ impl Compiler {
             self.emit_opcode(OpCode::OpPop);
         }
     }
-    fn add_local(&mut self, name: String) { self.locals.push(Local { name, depth: self.scope_depth }); }
+    fn add_local(&mut self, name: String) { 
+        self.locals.push(Local { 
+            name, 
+            depth: self.scope_depth, 
+            is_captured: false
+        }); 
+    }
     fn mark_initialized(&mut self) { self.locals.last_mut().unwrap().depth = self.scope_depth; }
     fn resolve_local(&self, name: &str) -> Result<Option<usize>, CompileError> {
         for (i, local) in self.locals.iter().enumerate().rev() {
