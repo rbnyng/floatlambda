@@ -6,7 +6,7 @@ use rand::Rng;
 use crate::ast::Term;
 use crate::error::EvalError;
 use crate::memory::{
-    Environment, Heap, Closure, BuiltinClosure, HeapObject,
+    Environment, Heap, ASTClosure, BuiltinClosure, HeapObject,
     NIL_VALUE, encode_heap_pointer, decode_heap_pointer
 };
 use crate::ml::{self}; 
@@ -25,36 +25,37 @@ pub fn apply_function(func_val: f64, arg_val: f64, heap: &mut Heap) -> Result<f6
 
         match heap_obj {
             HeapObject::UserFunc(closure) => {
-                        // println!("Applying UserFunc");
-                        let mut new_env_map = closure.env.as_ref().clone(); 
-                        new_env_map.insert(closure.param, arg_val);
-                        closure.body.eval(&Rc::new(new_env_map), heap)
-                    }
+                                // println!("Applying UserFunc");
+                                let mut new_env_map = closure.env.as_ref().clone(); 
+                                new_env_map.insert(closure.param, arg_val);
+                                closure.body.eval(&Rc::new(new_env_map), heap)
+                            }
             HeapObject::BuiltinFunc(mut closure) => {
-                        // println!("Applying BuiltinFunc: op={}, current_args={:?}, arity={}", 
-                        // closure.op, closure.args, closure.arity);
+                                // println!("Applying BuiltinFunc: op={}, current_args={:?}, arity={}", 
+                                // closure.op, closure.args, closure.arity);
 
-                        closure.args.push(arg_val);
-                        if closure.args.len() == closure.arity {
-                            // Pass the heap to builtins that might need it (like cons).
-                            // println!("Executing builtin {} with args {:?}", closure.op, closure.args);
-                            execute_builtin(&closure.op, &closure.args, heap)
-                        } else {
-                            // println!("Creating partial application");
-                            let new_id = heap.register(HeapObject::BuiltinFunc(closure));
-                            Ok(encode_heap_pointer(new_id))
-                        }
-                    }
+                                closure.args.push(arg_val);
+                                if closure.args.len() == closure.arity {
+                                    // Pass the heap to builtins that might need it (like cons).
+                                    // println!("Executing builtin {} with args {:?}", closure.op, closure.args);
+                                    execute_builtin(&closure.op, &closure.args, heap)
+                                } else {
+                                    // println!("Creating partial application");
+                                    let new_id = heap.register(HeapObject::BuiltinFunc(closure));
+                                    Ok(encode_heap_pointer(new_id))
+                                }
+                            }
             HeapObject::Pair(_, _) => {
-                        Err(EvalError::TypeError(format!("Cannot apply a non-function value: Pair<{}>", id)))
-                    }
+                                Err(EvalError::TypeError(format!("Cannot apply a non-function value: Pair<{}>", id)))
+                            }
             HeapObject::Tensor(_) => {
-                        Err(EvalError::TypeError(format!("Cannot apply a non-function value: Tensor<{}>", id)))
-                    }
+                                Err(EvalError::TypeError(format!("Cannot apply a non-function value: Tensor<{}>", id)))
+                            }
             HeapObject::Free(_) => {
-                        Err(EvalError::DanglingPointerError(id))
-                    }
+                                Err(EvalError::DanglingPointerError(id))
+                            }
             HeapObject::Function(_function) => Err(EvalError::TypeError("Cannot apply a VM function in the tree-walker.".to_string())),
+            HeapObject::Closure(_) => Err(EvalError::TypeError("Cannot apply a VM closure in the tree-walker.".to_string())),
         }
     } else {
          // Check if it's nil before declaring it a plain number
@@ -145,7 +146,7 @@ impl Term {
                         .ok_or_else(|| EvalError::UnboundVariable(name.clone()))?;
                 }
                 Term::Lam(param, body) => {
-                    let closure = Closure { param: param.clone(), body: body.clone(), env: current_env.clone() };
+                    let closure = ASTClosure { param: param.clone(), body: body.clone(), env: current_env.clone() };
                     let id = heap.register(HeapObject::UserFunc(closure));
                     result_val = encode_heap_pointer(id);
                 }
@@ -226,27 +227,28 @@ impl Term {
                             let heap_obj = heap.get(id).cloned().ok_or(EvalError::DanglingPointerError(id))?;
                             match heap_obj {
                                 HeapObject::UserFunc(closure) => {
-                                                                let mut new_env_map = closure.env.as_ref().clone();
-                                                                new_env_map.insert(closure.param, arg_val);
-                                                                current_env = Rc::new(new_env_map);
-                                                                current_term = *closure.body;
-                                                                continue 'trampoline; 
-                                                            }
+                                                                                            let mut new_env_map = closure.env.as_ref().clone();
+                                                                                            new_env_map.insert(closure.param, arg_val);
+                                                                                            current_env = Rc::new(new_env_map);
+                                                                                            current_term = *closure.body;
+                                                                                            continue 'trampoline; 
+                                                                                        }
                                 HeapObject::BuiltinFunc(mut closure) => {
-                                                                closure.args.push(arg_val);
-                                                                if closure.args.len() == closure.arity {
-                                                                    result_val = execute_builtin(&closure.op, &closure.args, heap)?;
-                                                                    continue; // Stay in continuation loop with new value.
-                                                                } else {
-                                                                    let new_id = heap.register(HeapObject::BuiltinFunc(closure));
-                                                                    result_val = encode_heap_pointer(new_id);
-                                                                    continue; // Stay in continuation loop with new value.
-                                                                }
-                                                            }
+                                                                                            closure.args.push(arg_val);
+                                                                                            if closure.args.len() == closure.arity {
+                                                                                                result_val = execute_builtin(&closure.op, &closure.args, heap)?;
+                                                                                                continue; // Stay in continuation loop with new value.
+                                                                                            } else {
+                                                                                                let new_id = heap.register(HeapObject::BuiltinFunc(closure));
+                                                                                                result_val = encode_heap_pointer(new_id);
+                                                                                                continue; // Stay in continuation loop with new value.
+                                                                                            }
+                                                                                        }
                                 HeapObject::Pair(_, _) => return Err(EvalError::TypeError(format!("Cannot apply a non-function value: Pair<{}>", id))),
                                 HeapObject::Tensor(_) => return Err(EvalError::TypeError(format!("Cannot apply a non-function value: Tensor<{}>", id))),
                                 HeapObject::Free(_) => return Err(EvalError::DanglingPointerError(id)),
                                 HeapObject::Function(_function) => return Err(EvalError::TypeError("Cannot apply a VM function in the tree-walker.".to_string())),
+                                HeapObject::Closure(_) => return Err(EvalError::TypeError("Cannot apply a VM closure in the tree-walker.".to_string())),
                             }
                         } else if func_val == NIL_VALUE {
                             return Err(EvalError::TypeError("Cannot apply a non-function value: nil".to_string()));

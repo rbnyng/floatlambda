@@ -35,6 +35,11 @@ pub enum OpCode {
     OpGreater,
     OpLess,
 
+    // --- Upvalue Opcodes ---
+    OpGetUpvalue,
+    OpSetUpvalue,
+    OpCloseUpvalue,
+
     // --- Variables ---
     /// Defines a new global variable. Operand is an index into the chunk's name pool.
     OpDefineGlobal,
@@ -48,6 +53,7 @@ pub enum OpCode {
 
     // --- Functions ---
     OpCall,
+    OpClosure, 
     
     // --- Jumps ---
     /// Unconditionally jumps forward by a 16-bit offset.

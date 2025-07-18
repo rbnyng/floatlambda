@@ -7,6 +7,8 @@ pub mod compiler;
 pub mod vm; // New
 pub mod vm_test; // New
 pub mod function; // New
+pub mod closure; // New
+
 // Re-export the key structures and functions.
 pub use chunk::Chunk;
 pub use opcode::OpCode;

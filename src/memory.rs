@@ -6,7 +6,8 @@ use std::rc::Rc;
 use crate::ast::Term;
 use crate::ml::tensor::DifferentiableTensor;
 use crate::error::EvalError;
-use crate::vm::function::Function; // New
+use crate::vm::function::Function;
+use crate::vm::closure::Closure as VMClosure;
 
 // --- Core Data Structures ---
 pub const NIL_VALUE: f64 = f64::NEG_INFINITY;
@@ -14,7 +15,7 @@ pub const NIL_VALUE: f64 = f64::NEG_INFINITY;
 pub type Environment = Rc<HashMap<String, f64>>;
 
 #[derive(Debug, Clone)]
-pub struct Closure {
+pub struct ASTClosure {
     pub param: String,
     pub body: Box<Term>,
     pub env: Environment,
@@ -30,10 +31,11 @@ pub struct BuiltinClosure {
 #[derive(Debug, Clone)]
 pub enum HeapObject {
     Function(Function), 
-    UserFunc(Closure),
+    UserFunc(ASTClosure),
     BuiltinFunc(BuiltinClosure),
     Pair(f64, f64), // The classic "cons cell" for building lists.
     Tensor(DifferentiableTensor), 
+    Closure(VMClosure), 
     Free(u64), // Points to the next free slot
 }
 
@@ -116,43 +118,46 @@ impl Heap {
             if let Some(obj) = self.get(id) {
                 match obj {
                     HeapObject::UserFunc(closure) => {
-                                        // A closure is a root for objects in its environment.
-                                        for val in closure.env.values() {
-                                            if let Some(child_id) = decode_heap_pointer(*val) {
-                                                worklist.push(child_id);
-                                            }
-                                        }
-                                    }
+                                                        // A ASTClosure is a root for objects in its environment.
+                                                        for val in closure.env.values() {
+                                                            if let Some(child_id) = decode_heap_pointer(*val) {
+                                                                worklist.push(child_id);
+                                                            }
+                                                        }
+                                                    }
                     HeapObject::Pair(car, cdr) => {
-                                        // A pair is a root for the objects in its car and cdr.
-                                        if let Some(car_id) = decode_heap_pointer(*car) {
-                                            worklist.push(car_id);
-                                        }
-                                        if let Some(cdr_id) = decode_heap_pointer(*cdr) {
-                                            worklist.push(cdr_id);
-                                        }
-                                    }
+                                                        // A pair is a root for the objects in its car and cdr.
+                                                        if let Some(car_id) = decode_heap_pointer(*car) {
+                                                            worklist.push(car_id);
+                                                        }
+                                                        if let Some(cdr_id) = decode_heap_pointer(*cdr) {
+                                                            worklist.push(cdr_id);
+                                                        }
+                                                    }
                     HeapObject::BuiltinFunc(closure) => { // Trace through partially applied builtins
-                                        for arg in &closure.args {
-                                            if let Some(child_id) = decode_heap_pointer(*arg) {
-                                                worklist.push(child_id);
-                                            }
-                                        }
-                                    }
+                                                        for arg in &closure.args {
+                                                            if let Some(child_id) = decode_heap_pointer(*arg) {
+                                                                worklist.push(child_id);
+                                                            }
+                                                        }
+                                                    }
                     HeapObject::Tensor(tensor) => {
-                                        if let Some(ctx) = &tensor.context {
-                                            for &parent_id in &ctx.parents {
-                                                worklist.push(parent_id);
-                                            }
-                                        }
-                                    }
+                                                        if let Some(ctx) = &tensor.context {
+                                                            for &parent_id in &ctx.parents {
+                                                                worklist.push(parent_id);
+                                                            }
+                                                        }
+                                                    }
                     HeapObject::Free(_) => {
                         
-                                    }
+                                                    }
                     HeapObject::Function(_func) => {
-                        // The GC needs to trace through the function's constants.
-                        // For now, a todo is fine, but this will be important later.
-                        // for constant in &func.chunk.constants { todo!() }
+                                        // The GC needs to trace through the function's constants.
+                                        // For now, a todo is fine, but this will be important later.
+                                        // for constant in &func.chunk.constants { todo!() }
+                                    }
+                    HeapObject::Closure(_closure) => {
+                        
                     }
                 }
             }
