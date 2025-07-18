@@ -203,32 +203,117 @@ if confidence then safe_action else risky_action    # → 28.0
 ## Built-in Functions
 
 ### Arithmetic
-- `+`, `-`, `*`, `/` - Basic arithmetic
-- `neg`, `abs`, `sqrt` - Unary math functions
-- `min`, `max` - Comparison functions
+- `+`, `-`, `*`, `/` - Basic arithmetic (curried: `(+ 1 2)` or `((+ 1) 2)`)
+- `neg`, `abs` - Unary operations: negate, absolute value
+- `sqrt` - Square root (returns NaN for negative inputs)
+- `min`, `max` - Minimum and maximum of two values
 - `div`, `rem` - Integer division and remainder (this is like % and // from Python)
+- `exp` - Exponential function (e^x)
+
+### Mathematics
+- `sin`, `cos`, `tan` - Trigonometric functions
+- `asin`, `acos`, `atan`, `atan2` - Inverse trigonometric functions
+- `sinh`, `cosh`, `tanh` - Hyperbolic functions
+- `asinh`, `acosh`, `atanh` - Inverse hyperbolic functions
+- `log`, `log2`, `log10` - Natural, base-2, and base-10 logarithms
+- `exp2` - Powers of 2 (2^x)
+- `pow` - General exponentiation: `(pow base exponent)`
+- `cbrt` - Cube root
+- `floor`, `ceil`, `round`, `trunc` - Rounding functions
+- `fract` - Fractional part
+- `signum` - Sign function (-1, 0, or 1)
+
+### Special Functions
+- `gamma` - Gamma function (generalized factorial)
+- `lgamma` - Natural logarithm of gamma function
+- `erf`, `erfc` - Error function and complementary error function
+- `hypot` - Euclidean distance: `sqrt(x² + y²)`
+- `copysign` - Copy sign from one number to another
+- `degrees`, `radians` - Convert between radians and degrees
+
+### Mathematical Constants
+- `pi` - π (3.14159...)
+- `e` - Euler's number (2.71828...)
+- `tau` - τ = 2π (6.28318...)
+- `sqrt2` - √2 (1.41421...)
+- `ln2` - ln(2) (0.69314...)
+- `ln10` - ln(10) (2.30258...)
+
+### Floating Point Utilities
+- `is_nan` - Check if value is NaN (returns 1.0 or 0.0)
+- `is_infinite` - Check if value is infinite
+- `is_finite` - Check if value is finite
+- `is_normal` - Check if value is a normal floating point number
+
+### Randomness
+- `random` - Random float in [0, 1)
+- `random_range` - Random float in specified range: `(random_range min max)`
+- `random_normal` - Normal distribution: `(random_normal mean std_dev)`
 
 ### Comparison  
 - `<`, `>`, `<=`, `>=` - Numeric comparisons (return 1.0 or 0.0)
-- `==` - Fuzzy equality (returns similarity score)
-- `eq?` - Strict equality (exact bit-wise comparison)
+- `==` - Fuzzy equality (returns similarity score: `e^(-|x-y|)`)
+- `eq?` - Strict equality (exact bit-wise comparison, handles NaN correctly)
 
 ### Calculus
 - `diff` - Numerical differentiation: `(diff f x)` computes f'(x)
-- `integrate` - Curried integration: `((integrate f a) b)` computes ∫ₐᵇ f(x)dx  
+- `integrate` - Numerical integration: `(integrate f a b)` computes ∫ₐᵇ f(x)dx
+  - Curried form: `((integrate f a) b)` allows partial application
 
-### Logic
-- `fuzzy_and`, `fuzzy_or`, `fuzzy_not` - Continuous logic operations
+### Fuzzy Logic
+- `fuzzy_and` - Continuous AND: `(fuzzy_and 0.8 0.6)` → 0.48
+- `fuzzy_or` - Continuous OR: `(fuzzy_or 0.8 0.6)` → 0.92  
+- `fuzzy_not` - Continuous NOT: `(fuzzy_not 0.3)` → 0.7
 
 ### Lists
 - `cons`, `car`, `cdr` - List construction and access
 - `length` - List length
-- `map`, `filter`, `foldl` - Higher-order list operations
+- `map` - Apply function to each element: `(map f list)`
+- `filter` - Keep elements matching predicate: `(filter predicate list)`
+- `foldl` - Left fold/reduce: `(foldl function initial list)`
 
 ### I/O
-- `print` - Output a list of character codes
+- `print` - Output a list of character codes (with probabilistic rendering)
 - `read-char` - Read a single character (returns character code)
 - `read-line` - Read a line of text (returns list of character codes)
+
+### Machine Learning (Tensor Operations)
+- `tensor` - Create tensor: `(tensor shape_list data_list)`
+- `add_t` - Element-wise tensor addition
+- `matmul` - Matrix multiplication  
+- `sigmoid_t` - Sigmoid activation function
+- `reshape` - Reshape tensor: `(reshape tensor new_shape)`
+- `transpose` - Transpose 2D tensor
+- `sum_t`, `mean_t` - Reduce tensor to scalar
+- `get_data`, `get_shape`, `get_grad` - Extract tensor information
+- `grad` - Automatic differentiation: `(grad function input_tensor)`
+
+### Examples
+
+```
+# Mathematical computation
+(sin (/ pi 2))                        # → 1.0
+(pow 2 10)                            # → 1024.0
+(gamma 5)                             # → 24.0 (4!)
+
+# Fuzzy logic
+(fuzzy_and 0.8 0.6)                   # → 0.48
+(== 1.0 1.1)                          # → ~0.905
+
+# Calculus
+let f = λx.(* x x) in
+(diff f 5.0)                          # → 10.0 (derivative of x²)
+(integrate f 0.0 3.0)                 # → 9.0 (integral of x²)
+
+# Machine learning
+let weights = (tensor (cons 2 (cons 1 nil)) (cons 0.5 (cons -0.3 nil))) in
+let gradients = (grad (λw. (sum_t w)) weights) in
+(get_data gradients)                  # → [1.0, 1.0]
+
+# Randomness
+(random_normal 0 1)                   # → ~0.123 (different each time)
+(random_range 10 20)                  # → ~15.67 (between 10 and 20)
+```
 
 ## What the Fuck?
 
