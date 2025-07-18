@@ -143,9 +143,9 @@ The `print` function uses fractional parts as rendering probabilities:
 (print (cons 65.7 nil))               # 70% chance of 'B', 30% chance of 'A'
 ```
 
-## Automatic Differentiation
+## Calculus
 
-Since everything is an f64, every operation is automatically differentiable. FloatLambda provides built-in calculus operations:
+Since everything is an f64, every operation is differentiable. FloatLambda provides built-in calculus operations:
 
 ### Derivatives
 ```
