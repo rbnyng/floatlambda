@@ -1,59 +1,104 @@
-// src/vm/vm.rs
+use std::collections::HashMap;
 
-use crate::memory::NIL_VALUE;
-use crate::vm::chunk::Chunk;
+use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject, NIL_VALUE};
+use crate::vm::compiler::{compile, CompileError};
+use crate::vm::function::Function;
 use crate::vm::opcode::OpCode;
-use std::collections::HashMap; 
 
-// Combined result type for the VM.
 #[derive(Debug)]
 pub enum InterpretError {
-    CompileError, // Placeholder for now
-    RuntimeError(String),
+    Compile(CompileError),
+    Runtime(String),
 }
 
-/// The main entry point to run code through the bytecode backend.
-pub fn interpret(chunk: &Chunk) -> Result<f64, InterpretError> {
-    let mut vm = VM::new(chunk);
+/// Represents a single ongoing function call.
+#[derive(Debug)]
+struct CallFrame {
+    /// Heap ID of the Function object being executed.
+    func_id: u64,
+    /// The instruction pointer for this call, pointing into the function's chunk.
+    ip: usize,
+    /// The index into the VM's main value stack where this function's locals start.
+    stack_slot: usize,
+}
+
+/// The Virtual Machine.
+pub struct VM<'a> {
+    heap: &'a mut Heap,
+    frames: Vec<CallFrame>,
+    stack: Vec<f64>,
+    globals: HashMap<String, f64>,
+}
+
+/// The main entry point to run code. It handles parsing, compiling, and execution.
+pub fn interpret(source: &str, heap: &mut Heap) -> Result<f64, InterpretError> {
+    let term = crate::parser::parse(source)
+        .map_err(|_| InterpretError::Compile(CompileError::UnsupportedExpression("Parse Error".to_string())))?; // Basic error mapping for now
+    let main_chunk = compile(&term).map_err(InterpretError::Compile)?;
+    let main_func = Function {
+        arity: 0,
+        chunk: main_chunk,
+        name: "<script>".to_string(),
+    };
+
+    let main_id = heap.register(HeapObject::Function(main_func));
+    let mut vm = VM::new(heap);
+    vm.stack.push(encode_heap_pointer(main_id)); // The function itself is at slot 0.
+    vm.call_value(encode_heap_pointer(main_id), 0)?; // Call the top-level script as a function.
+
     vm.run()
 }
 
-/// The Virtual Machine struct.
-struct VM<'a> {
-    chunk: &'a Chunk,
-    ip: usize, // Instruction Pointer
-    stack: Vec<f64>,
-    globals: HashMap<String, f64>, 
-}
-
 impl<'a> VM<'a> {
-    fn new(chunk: &'a Chunk) -> Self {
+    fn new(heap: &'a mut Heap) -> Self {
         VM {
-            chunk,
-            ip: 0,
-            stack: Vec::with_capacity(256), // Pre-allocate some stack space
-            globals: HashMap::new(), 
+            heap,
+            frames: Vec::with_capacity(64),
+            stack: Vec::with_capacity(256),
+            globals: HashMap::new(),
         }
     }
 
-    /// The main execution loop.
+    /// The main execution loop of the VM.
     fn run(&mut self) -> Result<f64, InterpretError> {
         loop {
-            // Read the instruction at the current pointer
-            let instruction = self.chunk.code[self.ip];
-            self.ip += 1;
+            // Get necessary info from the current frame.
+            let frame = self.frames.last().unwrap();
+            let ip = frame.ip;
+            let func_id = frame.func_id;
+
+            // --- Read instruction without holding a long borrow ---
+            let instruction = { // Scoped to release the borrow immediately
+                let func = match self.heap.get(func_id) {
+                    Some(HeapObject::Function(f)) => f,
+                    _ => return Err(InterpretError::Runtime("CallFrame points to a non-function heap object.".to_string())),
+                };
+                func.chunk.code[ip]
+            };
+            
+            // Advance the IP for the *next* iteration
+            self.frames.last_mut().unwrap().ip += 1;
 
             let op = OpCode::from(instruction);
-
             match op {
                 OpCode::OpReturn => {
-                    // The final result of the script is on top of the stack.
-                    return Ok(self.stack.pop().unwrap_or(NIL_VALUE));
+                    let result = self.pop_stack()?;
+                    let frame = self.frames.pop().unwrap();
+                    if self.frames.is_empty() {
+                        return Ok(result); // Final return from the script.
+                    }
+                    // Discard the returning function's stack window and push its result.
+                    self.stack.truncate(frame.stack_slot);
+                    self.stack.push(result);
                 }
                 OpCode::OpConstant => {
-                    let const_idx = self.chunk.code[self.ip] as usize;
-                    self.ip += 1;
-                    let constant = self.chunk.constants[const_idx];
+                    let const_idx = self.read_byte() as usize;
+                    // We need to get the chunk again for this opcode
+                    let func = match self.heap.get(func_id).unwrap() {
+                        HeapObject::Function(f) => f,
+                        _ => unreachable!(),
+                    };
+                    let constant = func.chunk.constants[const_idx];
                     self.stack.push(constant);
                 }
                 OpCode::OpNil => self.stack.push(NIL_VALUE),
@@ -63,8 +108,11 @@ impl<'a> VM<'a> {
                     let val = self.pop_stack()?;
                     self.stack.push(-val);
                 }
+                OpCode::OpNot => {
+                    let val = self.pop_stack()?;
+                    self.stack.push(if val == 0.0 { 1.0 } else { 0.0 });
+                }
                 OpCode::OpAdd | OpCode::OpSubtract | OpCode::OpMultiply | OpCode::OpDivide => {
-                    // Note: Order matters. The right-hand operand is pushed last, so it's popped first.
                     let b = self.pop_stack()?;
                     let a = self.pop_stack()?;
                     match op {
@@ -72,52 +120,8 @@ impl<'a> VM<'a> {
                         OpCode::OpSubtract => self.stack.push(a - b),
                         OpCode::OpMultiply => self.stack.push(a * b),
                         OpCode::OpDivide => self.stack.push(if b == 0.0 { f64::INFINITY } else { a / b }),
-                        _ => unreachable!(), // Should not happen
+                        _ => unreachable!(),
                     }
-                }
-                OpCode::OpDefineGlobal => {
-                    let name_idx = self.chunk.code[self.ip] as usize;
-                    self.ip += 1;
-                    let name = &self.chunk.names[name_idx];
-                    // The value is on top of the stack.
-                    // We use peek because a let expression's value is the result of its body,
-                    // not the assignment. The value remains on the stack for the next expression.
-                    if let Some(val) = self.stack.last() {
-                         self.globals.insert(name.clone(), *val);
-                         // After defining, we pop the value off. The result of a let is its body.
-                         self.pop_stack()?;
-                    } else {
-                        return Err(InterpretError::RuntimeError("Stack empty on global define.".to_string()));
-                    }
-                }
-                OpCode::OpGetGlobal => {
-                    let name_idx = self.chunk.code[self.ip] as usize;
-                    self.ip += 1;
-                    let name = &self.chunk.names[name_idx];
-                    match self.globals.get(name) {
-                        Some(val) => self.stack.push(*val),
-                        None => {
-                            return Err(InterpretError::RuntimeError(format!(
-                                "Undefined global variable '{}'.",
-                                name
-                            )));
-                        }
-                    }
-                }
-                OpCode::OpJump => {
-                    let offset = self.read_short();
-                    self.ip += offset;
-                }
-                OpCode::OpJumpIfFalse => {
-                    let offset = self.read_short();
-                    // Peek at the condition value without popping it yet.
-                    if let Some(&val) = self.stack.last() {
-                        if val == 0.0 || val == NIL_VALUE {
-                            self.ip += offset;
-                        }
-                    }
-                    // The condition value is no longer needed after the check.
-                    self.pop_stack()?;
                 }
                 OpCode::OpGreater | OpCode::OpLess | OpCode::OpEqual => {
                     let b = self.pop_stack()?;
@@ -125,33 +129,100 @@ impl<'a> VM<'a> {
                     let result = match op {
                         OpCode::OpGreater => a > b,
                         OpCode::OpLess => a < b,
-                        OpCode::OpEqual => a.to_bits() == b.to_bits(), // Strict bitwise eq?
+                        OpCode::OpEqual => a.to_bits() == b.to_bits(),
                         _ => unreachable!(),
                     };
                     self.stack.push(if result { 1.0 } else { 0.0 });
                 }
-                _ => {
-                    return Err(InterpretError::RuntimeError(format!(
-                        "Unknown opcode {:?}",
-                        op
-                    )))
+                OpCode::OpGetGlobal => {
+                    let name_idx = self.read_byte() as usize;
+                    // Re-fetch the chunk here as well
+                    let func = match self.heap.get(func_id).unwrap() {
+                        HeapObject::Function(f) => f,
+                        _ => unreachable!(),
+                    };
+                    let name = &func.chunk.names[name_idx];
+                    match self.globals.get(name) {
+                        Some(&val) => self.stack.push(val),
+                        None => return Err(InterpretError::Runtime(format!("Undefined global variable '{}'.", name))),
+                    }
                 }
+                OpCode::OpDefineGlobal => {
+                    let name_idx = self.read_byte() as usize;
+                    let name = { // Scoped borrow and clone
+                        let func = match self.heap.get(func_id).unwrap() {
+                             HeapObject::Function(f) => f, _ => unreachable!(),
+                        };
+                        func.chunk.names[name_idx].clone()
+                    };
+                    let val = self.pop_stack()?;
+                    self.globals.insert(name, val); // Use cloned name
+                }
+                OpCode::OpJump => {
+                    let offset = self.read_short();
+                    self.frames.last_mut().unwrap().ip += offset;
+                }
+                OpCode::OpJumpIfFalse => {
+                    let offset = self.read_short();
+                    if let Some(&val) = self.stack.last() {
+                        if val == 0.0 || val == NIL_VALUE {
+                            self.frames.last_mut().unwrap().ip += offset;
+                        }
+                    }
+                    self.pop_stack()?;
+                }
+                _ => return Err(InterpretError::Runtime(format!("Unimplemented opcode {:?}", op))),
             }
         }
     }
 
-    // Reads the next two bytes from the chunk as a u16 offset.
+    fn call_value(&mut self, func_val: f64, arg_count: usize) -> Result<(), InterpretError> {
+        let func_id = match decode_heap_pointer(func_val) {
+            Some(id) => id,
+            None => return Err(InterpretError::Runtime("Can only call functions.".to_string())),
+        };
+
+        match self.heap.get(func_id) {
+            Some(HeapObject::Function(func)) => {
+                if arg_count != func.arity {
+                    return Err(InterpretError::Runtime(format!("Expected {} arguments but got {}.", func.arity, arg_count)));
+                }
+                let frame = CallFrame {
+                    func_id,
+                    ip: 0,
+                    stack_slot: self.stack.len() - arg_count - 1,
+                };
+                self.frames.push(frame);
+                Ok(())
+            }
+            _ => Err(InterpretError::Runtime("Can only call functions.".to_string())),
+        }
+    }
+
+    fn read_byte(&mut self) -> u8 {
+        let frame = self.frames.last_mut().unwrap();
+        let func = match self.heap.get(frame.func_id).unwrap() {
+            HeapObject::Function(f) => f,
+            _ => panic!("Invalid state in read_byte"),
+        };
+        let byte = func.chunk.code[frame.ip];
+        frame.ip += 1;
+        byte
+    }
+
     fn read_short(&mut self) -> usize {
-        self.ip += 2;
-        let high = self.chunk.code[self.ip - 2] as usize;
-        let low = self.chunk.code[self.ip - 1] as usize;
+        let frame = self.frames.last_mut().unwrap();
+        let func = match self.heap.get(frame.func_id).unwrap() {
+            HeapObject::Function(f) => f,
+            _ => panic!("Invalid state in read_short"),
+        };
+        frame.ip += 2;
+        let high = func.chunk.code[frame.ip - 2] as usize;
+        let low = func.chunk.code[frame.ip - 1] as usize;
         (high << 8) | low
     }
 
-    // Helper to pop from the stack, returning a runtime error on underflow.
     fn pop_stack(&mut self) -> Result<f64, InterpretError> {
-        self.stack.pop().ok_or_else(|| {
-            InterpretError::RuntimeError("Stack underflow.".to_string())
-        })
+        self.stack.pop().ok_or_else(|| InterpretError::Runtime("Stack underflow.".to_string()))
     }
 }

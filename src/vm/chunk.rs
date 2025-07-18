@@ -3,7 +3,7 @@
 use crate::vm::opcode::OpCode;
 
 /// A chunk of bytecode representing a compiled script or function.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Chunk {
     /// The sequence of bytecode instructions.
     pub code: Vec<u8>,
@@ -12,6 +12,13 @@ pub struct Chunk {
     /// A parallel array to code, mapping each byte to a source line number.
     pub lines: Vec<usize>,
     pub names: Vec<String>, 
+}
+
+#[derive(Debug, Default)]
+pub struct Function {
+    pub arity: usize, // Number of parameters
+    pub chunk: Chunk,
+    pub name: String,
 }
 
 impl Chunk {

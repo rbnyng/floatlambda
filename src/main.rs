@@ -116,6 +116,7 @@ fn format_value(val: f64, heap: &Heap) -> String {
             Some(HeapObject::Pair(_, _)) => "Pair",
             Some(HeapObject::Tensor(_)) => "Tensor",
             Some(HeapObject::Free(_)) => "FreeSlot",
+            Some(HeapObject::Function(_)) => "Function", 
             None => "Invalid",
         };
         format!("{}<{}>", obj_type, id)
@@ -157,37 +158,38 @@ fn format_list_structure(mut current_ptr: f64, heap: &Heap, max_depth: usize) ->
 fn print_heap_object_details(obj: &HeapObject, heap: &Heap) {
     match obj {
         HeapObject::UserFunc(c) => {
-            println!("  Type: User-defined Function");
-            println!("  Param: {}", c.param);
-            println!("  Body: {}", c.body);
-            println!("  Env captures: [{}]", c.env.keys().cloned().collect::<Vec<_>>().join(", "));
-        }
+                        println!("  Type: User-defined Function");
+                        println!("  Param: {}", c.param);
+                        println!("  Body: {}", c.body);
+                        println!("  Env captures: [{}]", c.env.keys().cloned().collect::<Vec<_>>().join(", "));
+            }
         HeapObject::BuiltinFunc(c) => {
-            println!("  Type: Built-in Function (Partial Application)");
-            println!("  Op: {}", c.op);
-            println!("  Arity: {}", c.arity);
-            println!("  Args applied: {} / {}", c.args.len(), c.arity);
-            let formatted_args: Vec<String> = c.args.iter().map(|&arg| format_value(arg, heap)).collect();
-            println!("  Captured args: [{}]", formatted_args.join(", "));
-        }
+                println!("  Type: Built-in Function (Partial Application)");
+                println!("  Op: {}", c.op);
+                println!("  Arity: {}", c.arity);
+                println!("  Args applied: {} / {}", c.args.len(), c.arity);
+                let formatted_args: Vec<String> = c.args.iter().map(|&arg| format_value(arg, heap)).collect();
+                println!("  Captured args: [{}]", formatted_args.join(", "));
+            }
         HeapObject::Pair(car, cdr) => {
-            println!("  Type: Pair (Cons Cell)");
-            println!("  car: {}", format_value(*car, heap));
-            println!("  cdr: {}", format_value(*cdr, heap));
-            // Attempt to print as a list
-            let list_repr = format_list_structure(encode_heap_pointer(heap.find_id(obj).unwrap()), heap, 10);
-            println!("  List repr: {}", list_repr);
-        }
+                println!("  Type: Pair (Cons Cell)");
+                println!("  car: {}", format_value(*car, heap));
+                println!("  cdr: {}", format_value(*cdr, heap));
+                // Attempt to print as a list
+                let list_repr = format_list_structure(encode_heap_pointer(heap.find_id(obj).unwrap()), heap, 10);
+                println!("  List repr: {}", list_repr);
+            }
         HeapObject::Tensor(t) => {
-            println!("  Type: Tensor");
-            println!("  Shape: {:?}", t.shape);
-            let data_preview: Vec<f64> = t.data.iter().take(5).copied().collect();
-            println!("  Data (preview): {:?} {}", data_preview, if t.data.len() > 5 { "..." } else { "" });
-        }
+                println!("  Type: Tensor");
+                println!("  Shape: {:?}", t.shape);
+                let data_preview: Vec<f64> = t.data.iter().take(5).copied().collect();
+                println!("  Data (preview): {:?} {}", data_preview, if t.data.len() > 5 { "..." } else { "" });
+            }
         HeapObject::Free(next) => {
-            println!("  Type: Free Slot");
-            println!("  Points to next free slot: {:?}", if *next == u64::MAX { "None".to_string() } else { next.to_string() });
-        }
+                println!("  Type: Free Slot");
+                println!("  Points to next free slot: {:?}", if *next == u64::MAX { "None".to_string() } else { next.to_string() });
+            }
+        HeapObject::Function(_function) => todo!(),
     }
 }
 
@@ -295,6 +297,7 @@ fn print_result(result: f64, heap: &Heap) {
             Some(HeapObject::Pair(_, _)) => "Pair",
             Some(HeapObject::Tensor(_)) => "Tensor",
             Some(HeapObject::Free(_)) => "FreeSlot",
+            Some(HeapObject::Function(_)) => "Function", 
             None => "Invalid",
         };
         println!("Result: {}<{}> ({} objects alive)", obj_type, id, heap.alive_count());
