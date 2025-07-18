@@ -21,7 +21,7 @@ Functions and data structures are stored on a heap and referenced through specia
 
 ## Syntax Basics
 
-FloatLambda uses lambda calculus syntax with some modern conveniences:
+FloatLambda uses lambda calculus syntax (λ or \) with some modern conveniences:
 
 ### Lambda Functions
 ```
