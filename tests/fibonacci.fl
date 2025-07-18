@@ -1,0 +1,58 @@
+# Fibonacci Benchmark
+
+# Tail-recursive fibonacci (linear time)  
+let rec fib_tail = (λn. λa. λb.
+  if (< n 1) then a
+  else (fib_tail (- n 1) b (+ a b))
+) in
+
+let fib_fast = (λn. (fib_tail n 0 1)) in
+
+# Naive recursive (exponential time)
+let rec fib_naive = (λn.
+  if (< n 2) then n
+  else (+ (fib_naive (- n 1)) (fib_naive (- n 2)))
+) in
+
+# Simple timing wrapper - runs function multiple times
+let time_it = (λf. λarg. λiterations.
+  let rec loop = (λn. λacc.
+    if (< n 1) then acc
+    else (loop (- n 1) (f arg))
+  ) in
+  (loop iterations 0)
+) in
+
+# Warmup
+let warmup = (print "Warming up...\n") in
+let warm_result = (fib_fast 20) in
+
+# Test 1: fib_fast(30) - single run
+let msg1 = (print "=== Testing fib_fast(30) - single run ===\n") in
+let result30 = (fib_fast 30) in
+let msg1b = (print "Done!\n") in
+
+# Test 2: fib_fast(25) - multiple runs for timing
+let msg2 = (print "=== Testing fib_fast(25) - 100 iterations ===\n") in
+let time_result = (time_it fib_fast 25 100) in
+let msg2b = (print "Done!\n") in
+
+# Test 3: fib_naive(20) - single run (will be slow!)
+let msg3 = (print "=== Testing fib_naive(20) - single run (slow) ===\n") in
+let naive_result = (fib_naive 20) in
+let msg3b = (print "Done!\n") in
+
+# Test 4: fib_naive(15) - multiple runs
+let msg4 = (print "=== Testing fib_naive(15) - 10 iterations ===\n") in
+let naive_time = (time_it fib_naive 15 10) in
+let msg4b = (print "Done!\n") in
+
+# Test 5: Deep recursion test - fib_fast(1000)
+let msg5 = (print "=== Testing fib_fast(1000) - deep recursion ===\n") in
+let deep_result = (fib_fast 1000) in
+let msg5b = (print "Done!\n") in
+
+let final_msg = (print "=== All benchmarks complete ===\n") in
+
+# Return the main result (fib(30) = 832040)
+result30
