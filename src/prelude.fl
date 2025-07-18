@@ -11,14 +11,6 @@ let const = (λx. λy. x) in
 # Composes two functions. (compose f g x) is equivalent to (f (g x)).
 let compose = (λf. λg. λx. (f (g x))) in
 
-# --- Numeric utilities ---
-
-let max = (λa. λb. (if (> a b) then a else b)) in
-
-let min = (λa. λb. (if (< a b) then a else b)) in
-
-let between = (λx. λlow. λhigh. (and (>= x low) (<= x high))) in
-
 # --- Logical Operators ---
 
 # Logical NOT.
@@ -29,6 +21,14 @@ let and = (λa. λb. (if a then b else 0)) in
 
 # Logical OR (with short-circuiting).
 let or = (λa. λb. (if a then 1 else b)) in
+
+# --- Numeric utilities ---
+
+let max = (λa. λb. (if (> a b) then a else b)) in
+
+let min = (λa. λb. (if (< a b) then a else b)) in
+
+let between = (λx. λlow. λhigh. (and (>= x low) (<= x high))) in
 
 # --- List Utilities ---
 
@@ -311,7 +311,7 @@ let rec hashmap_values = (λhmap.
 
 # Set representation: sorted list of unique elements
 let set_empty = nil in
-let set_new = (λ_. nil) in
+let set_new = nil in 
 
 # Insert element maintaining sorted order and uniqueness
 let rec set_insert = (λset. λvalue.

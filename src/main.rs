@@ -58,32 +58,46 @@ fn process_input(
         println!("Parsed: {}", term);
     }
     
-    // Create the evaluation environment from the REPL's global state
-    let eval_env = Rc::new(global_env_map.clone());
-    
-    // We need to handle top-level let and let rec to update the REPL state for the *next* command.
-    match &term {
-        Term::Let(name, value, _) => {
-            // To add a let binding, we must evaluate its value part.
-            let value_val = value.eval(&eval_env, heap)
-                .map_err(|e| format!("Eval error: {}", e))?;
-            // And then add it to our persistent global map.
-            global_env_map.insert(name.clone(), value_val);
+    // If this is the prelude, we need to walk the entire let-chain and populate
+    // the global environment with all definitions.
+    if is_prelude {
+        let mut current_term = &term;
+        loop {
+            match current_term {
+                Term::Let(name, value, body) => {
+                    let eval_env = Rc::new(global_env_map.clone());
+                    let value_val = value.eval(&eval_env, heap)
+                        .map_err(|e| format!("Eval error in prelude binding '{}': {}", name, e))?;
+                    global_env_map.insert(name.clone(), value_val);
+                    current_term = body; // Recurse into the body
+                },
+                Term::LetRec(name, value, body) => {
+                    let eval_env = Rc::new(global_env_map.clone());
+                    let get_func_term = Term::LetRec(name.clone(), value.clone(), Box::new(Term::Var(name.clone())));
+                    let func_val = get_func_term.eval(&eval_env, heap)
+                         .map_err(|e| format!("Eval error in prelude binding '{}': {}", name, e))?;
+                    global_env_map.insert(name.clone(), func_val);
+                    current_term = body; // Recurse into the body
+                },
+                _ => break, // Stop when we hit the final expression (e.g., 'identity')
+            }
         }
-        Term::LetRec(name, value, _) => {
-            // For a let rec, we need to evaluate it to get the cyclic function value.
-            // We create a temporary let rec that returns the function itself.
-            let get_func_term = Term::LetRec(name.clone(), value.clone(), Box::new(Term::Var(name.clone())));
-            let func_val = get_func_term.eval(&eval_env, heap)
-                 .map_err(|e| format!("Eval error: {}", e))?;
-            // And add the resulting function to the global map.
-            global_env_map.insert(name.clone(), func_val);
-        }
-        _ => {}
+    } 
+    // This handles REPL-style single definitions
+    else if let Term::Let(name, value, _) = &term {
+        let eval_env = Rc::new(global_env_map.clone());
+        let value_val = value.eval(&eval_env, heap)
+            .map_err(|e| format!("Eval error: {}", e))?;
+        global_env_map.insert(name.clone(), value_val);
+    } else if let Term::LetRec(name, value, _) = &term {
+         let eval_env = Rc::new(global_env_map.clone());
+         let get_func_term = Term::LetRec(name.clone(), value.clone(), Box::new(Term::Var(name.clone())));
+         let func_val = get_func_term.eval(&eval_env, heap)
+              .map_err(|e| format!("Eval error: {}", e))?;
+         global_env_map.insert(name.clone(), func_val);
     }
-
-    // Finally, evaluate the complete term in the context of the (possibly updated) environment
-    // to get the result for *this* command.
+    
+    // Finally, evaluate the complete term in the context of the (now correctly populated) environment.
     let final_env = Rc::new(global_env_map.clone());
     term.eval(&final_env, heap).map_err(|e| format!("Eval error: {}", e))
 }
