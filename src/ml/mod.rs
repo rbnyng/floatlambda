@@ -4,26 +4,37 @@
 pub mod autodiff;
 pub mod ops;
 pub mod tensor;
+pub mod optimizers;
 
 // Re-export key components for easier use in the evaluator
 pub use autodiff::grad;
 pub use ops::{add, matmul, sigmoid};
 pub use tensor::DifferentiableTensor;
-
 use crate::error::EvalError;
 use crate::interpreter::evaluator::{list_to_vec, vec_to_list};
-use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject};
+use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject, NIL_VALUE};
 
 pub fn get_ml_builtin_arity(op: &str) -> Option<usize> {
     match op {
         // Unary
         "get_data" | "get_shape" | "get_grad" |
-        "transpose" | "sum_t" | "mean_t" | "sigmoid_t"
+        "transpose" | "sum_t" | "mean_t" |
+        "sigmoid_t" | "relu_t" |
+        "adamw_init_state" | "flatten"
         => Some(1),
 
         // Binary
-        "tensor" | "add_t" | "matmul" | "grad" | "reshape"
+        "tensor" | "add_t" | "matmul" | "grad" | "reshape" |
+        "mse_loss" | "softmax_ce_loss"
         => Some(2),
+
+        // Ternary
+        "sgd_update"
+        => Some(3),
+
+        // 8 arguments: params, grads, state, lr, b1, b2, eps, wd
+        "adamw_update"
+        => Some(8),
 
         _ => None,
     }
@@ -62,6 +73,101 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let res = ops::sigmoid(id1, &t1);
             let id = heap.register(HeapObject::Tensor(res));
             Ok(encode_heap_pointer(id))
+        }
+        "relu_t" => {
+            let id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("relu_t expects a tensor".to_string()))?;
+            let t = heap.get_tensor_mut(id)?.clone();
+            let res = ops::relu(id, &t);
+            let res_id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(res_id))
+        }
+        "mse_loss" => {
+            let y_true_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("mse_loss expects a tensor".to_string()))?;
+            let y_pred_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("mse_loss expects a tensor".to_string()))?;
+            let y_true = heap.get_tensor_mut(y_true_id)?.clone();
+            let y_pred = heap.get_tensor_mut(y_pred_id)?.clone();
+            let res = ops::mse_loss(y_true_id, &y_true, y_pred_id, &y_pred)?;
+            let res_id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(res_id))
+        }
+        "sgd_update" => {
+            let params_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("sgd_update expects a tensor".to_string()))?;
+            let grads_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("sgd_update expects a tensor".to_string()))?;
+            let learning_rate = args[2];
+            let params = heap.get_tensor_mut(params_id)?.clone();
+            let grads = heap.get_tensor_mut(grads_id)?.clone();
+            let res = optimizers::sgd_update(&params, &grads, learning_rate)?;
+            let res_id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(res_id))
+        }
+        "adamw_init_state" => {
+            let params_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("adamw_init_state expects a tensor".to_string()))?;
+            let params = heap.get_tensor_mut(params_id)?.clone();
+            let (m, v, t) = optimizers::adamw_init_state(&params);
+
+            let m_id = heap.register(HeapObject::Tensor(m));
+            let v_id = heap.register(HeapObject::Tensor(v));
+
+            // Build state list: (cons m (cons v (cons t nil)))
+            let t_cons = heap.register(HeapObject::Pair(t, NIL_VALUE));
+            let v_cons = heap.register(HeapObject::Pair(encode_heap_pointer(v_id), encode_heap_pointer(t_cons)));
+            let m_cons = heap.register(HeapObject::Pair(encode_heap_pointer(m_id), encode_heap_pointer(v_cons)));
+            
+            Ok(encode_heap_pointer(m_cons))
+        }
+        "adamw_update" => {
+            let params_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("adamw_update: arg 1 (params) must be a tensor".to_string()))?;
+            let grads_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("adamw_update: arg 2 (grads) must be a tensor".to_string()))?;
+            
+            // Unpack state list
+            let state_vec = list_to_vec(args[2], heap)?;
+            if state_vec.len() != 3 { return Err(EvalError::TypeError("adamw_update: arg 3 (state) must be a list of 3 elements [m, v, t]".to_string())); }
+            let m_id = decode_heap_pointer(state_vec[0]).ok_or_else(|| EvalError::TypeError("adamw_update: state element m must be a tensor".to_string()))?;
+            let v_id = decode_heap_pointer(state_vec[1]).ok_or_else(|| EvalError::TypeError("adamw_update: state element v must be a tensor".to_string()))?;
+            let t = state_vec[2];
+            
+            let lr = args[3];
+            let beta1 = args[4];
+            let beta2 = args[5];
+            let epsilon = args[6];
+            let weight_decay = args[7];
+
+            let params = heap.get_tensor_mut(params_id)?.clone();
+            let grads = heap.get_tensor_mut(grads_id)?.clone();
+            let m = heap.get_tensor_mut(m_id)?.clone();
+            let v = heap.get_tensor_mut(v_id)?.clone();
+
+            let (new_params, new_m, new_v, new_t) = optimizers::adamw_update(&params, &grads, &m, &v, t, lr, beta1, beta2, epsilon, weight_decay)?;
+
+            let new_params_id = heap.register(HeapObject::Tensor(new_params));
+            let new_m_id = heap.register(HeapObject::Tensor(new_m));
+            let new_v_id = heap.register(HeapObject::Tensor(new_v));
+
+            // Build result list: (cons new_params (cons new_state nil))
+            // where new_state is (cons new_m (cons new_v (cons new_t nil)))
+            let new_t_cons = heap.register(HeapObject::Pair(new_t, NIL_VALUE));
+            let new_v_cons = heap.register(HeapObject::Pair(encode_heap_pointer(new_v_id), encode_heap_pointer(new_t_cons)));
+            let new_m_cons = heap.register(HeapObject::Pair(encode_heap_pointer(new_m_id), encode_heap_pointer(new_v_cons)));
+
+            let result_cons = heap.register(HeapObject::Pair(encode_heap_pointer(new_params_id), encode_heap_pointer(new_m_cons)));
+
+            Ok(encode_heap_pointer(result_cons))
+        }
+        "softmax_ce_loss" => {
+            let y_true_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("softmax_ce_loss expects a tensor for y_true".to_string()))?;
+            let logits_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("softmax_ce_loss expects a tensor for logits".to_string()))?;
+            let y_true = heap.get_tensor_mut(y_true_id)?.clone();
+            let logits = heap.get_tensor_mut(logits_id)?.clone();
+            let res = ops::softmax_ce_loss(y_true_id, &y_true, logits_id, &logits)?;
+            let res_id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(res_id))
+        }
+        "flatten" => {
+            let id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("flatten expects a tensor".to_string()))?;
+            let t = heap.get_tensor_mut(id)?.clone();
+            let res = ops::flatten(id, &t)?;
+            let res_id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(res_id))
         }
         "grad" => {
             let func_ptr = args[0];

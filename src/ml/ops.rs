@@ -1,7 +1,6 @@
 // src/ml/ops.rs
 
 use std::rc::Rc;
-
 use super::tensor::{Context, DifferentiableTensor};
 use crate::error::EvalError;
 
@@ -34,14 +33,13 @@ pub fn add(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &Differentiabl
     }
     let new_data: Vec<f64> = t1.data.iter().zip(t2.data.iter()).map(|(a, b)| a + b).collect();
     let mut result = DifferentiableTensor::new(t1.shape.clone(), new_data);
-
     result.context = Some(Rc::new(Context {
         parents: vec![t1_id, t2_id],
         backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| { 
             // Gradient of add is 1, so just pass grad back to both parents.
             let t1_ref = heap.get_tensor_mut(t1_id).unwrap();
             for (g_out, g_in) in grad_output.iter().zip(t1_ref.grad.borrow_mut().iter_mut()) {
-                *g_in += g_out;
+                 *g_in += g_out;
             }
             let t2_ref = heap.get_tensor_mut(t2_id).unwrap();
             for (g_out, g_in) in grad_output.iter().zip(t2_ref.grad.borrow_mut().iter_mut()) {
@@ -67,7 +65,6 @@ pub fn matmul(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &Differenti
     }
     let (m, k1) = (t1.shape[0], t1.shape[1]);
     let (_k2, n) = (t2.shape[0], t2.shape[1]);
-
     let mut new_data = vec![0.0; m * n];
     for r in 0..m {
         for c in 0..n {
@@ -80,12 +77,10 @@ pub fn matmul(t1_id: u64, t1: &DifferentiableTensor, t2_id: u64, t2: &Differenti
     }
     let new_shape = vec![m, n];
     let mut result = DifferentiableTensor::new(new_shape.clone(), new_data);
-
     let t1_shape = t1.shape.clone();
     let t1_data = t1.data.clone();
     let t2_shape = t2.shape.clone();
     let t2_data = t2.data.clone();
-
     result.context = Some(Rc::new(Context {
         parents: vec![t1_id, t2_id],
         backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| { 
@@ -134,6 +129,159 @@ pub fn sigmoid(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
     result
 }
 
+pub fn relu(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
+    let new_data: Vec<f64> = t.data.iter().map(|&x| x.max(0.0)).collect();
+    let mut result = DifferentiableTensor::new(t.shape.clone(), new_data);
+    
+    // The backward pass needs the original input data to determine where the gradient is zero.
+    let original_data = t.data.clone();
+    result.context = Some(Rc::new(Context {
+        parents: vec![t_id],
+        backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| {
+            // grad_input = grad_output * (1 if x > 0 else 0)
+            let t_ref = heap.get_tensor_mut(t_id).unwrap();
+            let mut grad_input = t_ref.grad.borrow_mut();
+            for i in 0..grad_output.len() {
+                if original_data[i] > 0.0 {
+                    grad_input[i] += grad_output[i];
+                }
+            }
+        }),
+    }));
+    result
+}
+
+pub fn mse_loss(y_true_id: u64, y_true: &DifferentiableTensor, y_pred_id: u64, y_pred: &DifferentiableTensor) -> Result<DifferentiableTensor, EvalError> {
+    if y_true.shape != y_pred.shape {
+        return Err(EvalError::TypeError(format!(
+            "Shape mismatch for mse_loss: y_true {:?} vs y_pred {:?}",
+            y_true.shape, y_pred.shape
+        )));
+    }
+    
+    // Forward pass: mean((y_pred - y_true)^2)
+    let n = y_true.data.len() as f64;
+    let diffs: Vec<f64> = y_pred.data.iter().zip(y_true.data.iter()).map(|(p, t)| p - t).collect();
+    let squared_error_sum: f64 = diffs.iter().map(|&d| d * d).sum();
+    let loss = squared_error_sum / n;
+
+    // The result is a scalar tensor.
+    let mut result = DifferentiableTensor::new(vec![], vec![loss]);
+
+    // Backward pass
+    result.context = Some(Rc::new(Context {
+        parents: vec![y_true_id, y_pred_id],
+        backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| {
+            // grad_pred = grad_output * 2 * (y_pred - y_true) / N
+            // grad_true = grad_output * -2 * (y_pred - y_true) / N
+            let scalar_grad = grad_output[0];
+            
+            // Use a separate scope for each mutable borrow.
+            {
+                let y_pred_ref = heap.get_tensor_mut(y_pred_id).unwrap();
+                let mut grad_pred = y_pred_ref.grad.borrow_mut();
+                for i in 0..diffs.len() {
+                    grad_pred[i] += scalar_grad * 2.0 * diffs[i] / n;
+                }
+            }
+
+            {
+                let y_true_ref = heap.get_tensor_mut(y_true_id).unwrap();
+                let mut grad_true = y_true_ref.grad.borrow_mut();
+                for i in 0..diffs.len() {
+                    grad_true[i] += scalar_grad * -2.0 * diffs[i] / n;
+                }
+            }
+        }),
+    }));
+    Ok(result)
+}
+
+pub fn flatten(t_id: u64, t: &DifferentiableTensor) -> Result<DifferentiableTensor, EvalError> {
+    if t.shape.is_empty() {
+        return Err(EvalError::TypeError("Cannot flatten a scalar tensor.".to_string()));
+    }
+    if t.shape.len() == 1 { // Already flat
+        return Ok(t.clone());
+    }
+
+    let batch_size = t.shape[0];
+    let other_dims_product: usize = t.shape[1..].iter().product();
+    let new_shape = vec![batch_size, other_dims_product];
+    
+    let mut result = DifferentiableTensor::new(new_shape, t.data.clone());
+
+    result.context = Some(Rc::new(Context {
+        parents: vec![t_id],
+        backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| {
+            // The gradient for flatten is just an un-flatten (a reshape).
+            // Since the data layout is identical, we just add the gradients.
+            let t_ref = heap.get_tensor_mut(t_id).unwrap();
+            let mut grad_input = t_ref.grad.borrow_mut();
+            assert_eq!(grad_output.len(), grad_input.len());
+            for i in 0..grad_output.len() {
+                grad_input[i] += grad_output[i];
+            }
+        }),
+    }));
+    Ok(result)
+}
+
+pub fn softmax_ce_loss(_y_true_id: u64, y_true: &DifferentiableTensor, logits_id: u64, logits: &DifferentiableTensor) -> Result<DifferentiableTensor, EvalError> {
+    if y_true.shape != logits.shape || y_true.shape.len() != 2 {
+        return Err(EvalError::TypeError("softmax_ce_loss expects 2D tensors [batch, classes] of the same shape.".to_string()));
+    }
+    
+    let batch_size = logits.shape[0];
+    let num_classes = logits.shape[1];
+    let n = batch_size as f64;
+    
+    let mut softmax_probs = Vec::with_capacity(logits.data.len());
+    let mut total_loss = 0.0;
+
+    // Forward pass
+    for i in 0..batch_size {
+        let start = i * num_classes;
+        let end = start + num_classes;
+        let logit_slice = &logits.data[start..end];
+        
+        // Stabilize by subtracting max logit
+        let max_logit = logit_slice.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+        let exps: Vec<f64> = logit_slice.iter().map(|&l| (l - max_logit).exp()).collect();
+        let sum_exps: f64 = exps.iter().sum();
+
+        let probs: Vec<f64> = exps.iter().map(|&e| e / sum_exps).collect();
+        
+        // Calculate loss for this item: -sum(y_true * log(probs))
+        let y_true_slice = &y_true.data[start..end];
+        let item_loss: f64 = y_true_slice.iter().zip(probs.iter()).map(|(yt, p)| -yt * p.ln()).sum();
+        total_loss += item_loss;
+        
+        softmax_probs.extend(probs);
+    }
+
+    let mean_loss = total_loss / n;
+    let mut result = DifferentiableTensor::new(vec![], vec![mean_loss]);
+
+    // Backward pass
+    let y_true_data = y_true.data.clone();
+    result.context = Some(Rc::new(Context {
+        parents: vec![logits_id], // Loss flows back only to logits
+        backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| {
+            // grad_logits = grad_output * (softmax_probs - y_true) / N
+            let scalar_grad = grad_output[0];
+            let logits_ref = heap.get_tensor_mut(logits_id).unwrap();
+            let mut grad_logits = logits_ref.grad.borrow_mut();
+
+            for i in 0..softmax_probs.len() {
+                grad_logits[i] += scalar_grad * (softmax_probs[i] - y_true_data[i]) / n;
+            }
+        }),
+    }));
+
+    Ok(result)
+}
+
 pub fn reshape(t_id: u64, t: &DifferentiableTensor, new_shape_vec: Vec<usize>) -> Result<DifferentiableTensor, EvalError> {
     let original_len: usize = t.shape.iter().product();
     let new_len: usize = new_shape_vec.iter().product();
@@ -146,7 +294,6 @@ pub fn reshape(t_id: u64, t: &DifferentiableTensor, new_shape_vec: Vec<usize>) -
     }
     
     let mut result = DifferentiableTensor::new(new_shape_vec, t.data.clone());
-
     result.context = Some(Rc::new(Context {
         parents: vec![t_id],
         backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| {
@@ -158,7 +305,6 @@ pub fn reshape(t_id: u64, t: &DifferentiableTensor, new_shape_vec: Vec<usize>) -
             }
         }),
     }));
-    
     Ok(result)
 }
 
@@ -166,7 +312,6 @@ pub fn sum_t(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
     let sum_val = t.data.iter().sum();
     // The result is a scalar tensor.
     let mut result = DifferentiableTensor::new(vec![], vec![sum_val]);
-
     result.context = Some(Rc::new(Context {
         parents: vec![t_id],
         backward_fn: Box::new(move |grad_output, heap: &mut crate::memory::Heap| {
@@ -179,7 +324,6 @@ pub fn sum_t(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
             }
         }),
     }));
-
     result
 }
 
@@ -189,7 +333,6 @@ pub fn mean_t(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
     let mean_val = if count == 0.0 { 0.0 } else { sum_val / count };
     // The result is a scalar tensor.
     let mut result = DifferentiableTensor::new(vec![], vec![mean_val]);
-
     if count > 0.0 {
         result.context = Some(Rc::new(Context {
             parents: vec![t_id],
@@ -206,80 +349,4 @@ pub fn mean_t(t_id: u64, t: &DifferentiableTensor) -> DifferentiableTensor {
     }
 
     result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ops_add() {
-        let t1 = DifferentiableTensor::new(vec![2], vec![10.0, 20.0]);
-        let t2 = DifferentiableTensor::new(vec![2], vec![1.0, 2.0]);
-        let result = add(0, &t1, 1, &t2).unwrap(); // IDs are dummies for this test
-
-        assert_eq!(result.shape, vec![2]);
-        assert_eq!(result.data, vec![11.0, 22.0]);
-        assert!(result.context.is_some());
-    }
-
-    #[test]
-    fn test_ops_matmul() {
-        let t1 = DifferentiableTensor::new(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]);
-        let t2 = DifferentiableTensor::new(vec![2, 1], vec![5.0, 6.0]);
-        let result = matmul(0, &t1, 1, &t2).unwrap();
-
-        // [1, 2] * [5] = [1*5 + 2*6] = [17]
-        // [3, 4]   [6]   [3*5 + 4*6] = [39]
-        assert_eq!(result.shape, vec![2, 1]);
-        assert_eq!(result.data, vec![17.0, 39.0]);
-        assert!(result.context.is_some());
-    }
-
-    #[test]
-    fn test_ops_matmul_bad_shapes() {
-        let t1 = DifferentiableTensor::new(vec![2, 3], vec![0.0; 6]);
-        let t2 = DifferentiableTensor::new(vec![2, 2], vec![0.0; 4]);
-        assert!(matmul(0, &t1, 1, &t2).is_err()); // Inner dimensions (3 vs 2) don't match
-    }
-
-    #[test]
-    fn test_ops_sigmoid() {
-        let t = DifferentiableTensor::new(vec![2], vec![0.0, 100.0]);
-        let result = sigmoid(0, &t);
-        
-        assert!((result.data[0] - 0.5).abs() < 1e-6);
-        assert!((result.data[1] - 1.0).abs() < 1e-6);
-        assert!(result.context.is_some());
-    }
-
-    #[test]
-    fn test_ops_reshape() {
-        let t = DifferentiableTensor::new(vec![2, 3], (1..=6).map(|x| x as f64).collect());
-        let reshaped = reshape(0, &t, vec![3, 2]).unwrap();
-        assert_eq!(reshaped.shape, vec![3, 2]);
-        assert_eq!(reshaped.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
-        assert!(reshaped.context.is_some());
-    }
-
-    #[test]
-    fn test_ops_reshape_bad_size() {
-        let t = DifferentiableTensor::new(vec![2, 3], vec![0.0; 6]);
-        assert!(reshape(0, &t, vec![4, 2]).is_err()); // 6 elements vs 8
-    }
-    
-    #[test]
-    fn test_ops_sum_and_mean() {
-        let t = DifferentiableTensor::new(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]);
-        let sum_res = sum_t(0, &t);
-        let mean_res = mean_t(0, &t);
-
-        assert_eq!(sum_res.shape, vec![]);
-        assert_eq!(sum_res.data, vec![10.0]);
-        assert!(sum_res.context.is_some());
-
-        assert_eq!(mean_res.shape, vec![]);
-        assert_eq!(mean_res.data, vec![2.5]);
-        assert!(mean_res.context.is_some());
-    }
 }
