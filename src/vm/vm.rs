@@ -2,7 +2,7 @@
 
 use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject, NIL_VALUE};
 use crate::vm::closure::{Closure as VMClosure, Upvalue};
-use crate::vm::compiler::{compile, CompileError};
+use crate::vm::compiler::{self, CompileError};
 use crate::vm::natives;
 use crate::vm::opcode::OpCode;
 use std::collections::HashMap;
@@ -23,6 +23,14 @@ impl std::fmt::Display for InterpretError {
     }
 }
 
+/// The main entry point to run a complete script from a source string.
+/// It handles parsing, compiling, and execution in one go.
+pub fn interpret(source: &str, heap: &mut Heap) -> Result<f64, InterpretError> {
+    let mut vm = VM::new(heap);
+    let closure_id = vm.compile_and_load(source)?;
+    vm.prime_and_run(closure_id)
+}
+
 /// Represents a single ongoing function call.
 #[derive(Debug)]
 pub struct CallFrame {
@@ -34,12 +42,11 @@ pub struct CallFrame {
     pub stack_slot: usize,
 }
 
-/// The Virtual Machine.
 pub struct VM<'a> {
     pub heap: &'a mut Heap,
     pub frames: Vec<CallFrame>,
     pub stack: Vec<f64>,
-    globals: HashMap<String, f64>,
+    pub globals: HashMap<String, f64>, // Make globals public
     open_upvalues: Vec<u64>,
 }
 
@@ -52,27 +59,6 @@ pub fn fuzzy_eq(x: f64, y: f64) -> f64 {
     (-(diff / scale_factor)).exp()
 }
 
-/// The main entry point to run code. It handles parsing, compiling, and execution.
-pub fn interpret(source: &str, heap: &mut Heap) -> Result<f64, InterpretError> {
-    let term = crate::parser::parse(source).map_err(|_| InterpretError::Compile(CompileError::ParseError))?;
-    let mut main_func = compile(&term, heap).map_err(InterpretError::Compile)?;
-    main_func.name = "<script>".to_string();
-    
-    let main_id = heap.register(HeapObject::Function(main_func));
-    let main_closure = VMClosure { func_id: main_id, upvalues: Rc::new(Vec::new()) };
-
-    let main_closure_id = heap.register(HeapObject::Closure(main_closure));
-
-    let mut vm = VM::new(heap);
-    
-    // Prime the VM for the first call
-    vm.stack.push(encode_heap_pointer(main_closure_id));
-    vm.call_value(encode_heap_pointer(main_closure_id), 0)?;
-
-    // Start the main execution loop
-    vm.run()
-}
-
 impl<'a> VM<'a> {
     pub fn new(heap: &'a mut Heap) -> Self {
         VM {
@@ -82,6 +68,29 @@ impl<'a> VM<'a> {
             globals: HashMap::new(),
             open_upvalues: Vec::new(),
         }
+    }
+
+    /// Compiles a source string and loads the resulting function into the heap.
+    /// Returns the heap ID of the compiled closure.
+    pub fn compile_and_load(&mut self, source: &str) -> Result<u64, InterpretError> {
+        let term = crate::parser::parse(source)
+            .map_err(|_| InterpretError::Compile(CompileError::ParseError))?;
+
+        // The compiler is now part of the VM's process
+        let mut main_func = compiler::compile(&term, self.heap).map_err(InterpretError::Compile)?;
+        main_func.name = "<script>".to_string();
+
+        let main_id = self.heap.register(HeapObject::Function(main_func));
+        let main_closure = VMClosure { func_id: main_id, upvalues: Rc::new(Vec::new()) };
+        let main_closure_id = self.heap.register(HeapObject::Closure(main_closure));
+        Ok(main_closure_id)
+    }
+
+    /// Primes the VM to run a compiled closure and starts the execution loop.
+    pub fn prime_and_run(&mut self, closure_id: u64) -> Result<f64, InterpretError> {
+        self.stack.push(encode_heap_pointer(closure_id));
+        self.call_value(encode_heap_pointer(closure_id), 0)?;
+        self.run()
     }
 
     /// The re-entrant execution loop of the VM.
