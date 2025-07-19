@@ -171,8 +171,7 @@ pub const HOF_NATIVES: &[NativeDef] = &[
 mod tests {
     use super::*;
     use crate::memory::{Heap, NIL_VALUE};
-    use crate::vm::{compiler, vm::VM};
-    use crate::parser;
+    use crate::vm::vm::VM;
 
     // Helper to set up a VM with a given heap for testing.
     fn setup_vm() -> VM<'static> {

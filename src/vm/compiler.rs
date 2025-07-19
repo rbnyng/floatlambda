@@ -52,26 +52,6 @@ pub fn compile(term: &Term, heap: &mut Heap) -> Result<Function, CompileError> {
     Ok(compiler.end_compiler())
 }
 
-// Helper to check for tail calls to a specific function within a Term.
-// `current_rec_func_name` is Some(name) when inside a let-rec.
-fn is_tail_call(term: &Term, current_rec_func_name: Option<&str>) -> bool {
-    match (term, current_rec_func_name) {
-        // A tail call is an application of the function we're currently defining.
-        (Term::App(f, _), Some(name)) => {
-            if let Term::Var(var_name) = &**f {
-                var_name == name
-            } else {
-                false
-            }
-        },
-        // Recursively check inside the final expression of let/if.
-        (Term::Let(_, _, body), name) => is_tail_call(body, name),
-        (Term::LetRec(_, _, body), name) => is_tail_call(body, name),
-        (Term::If(_, t, e), name) => is_tail_call(t, name) || is_tail_call(e, name),
-        _ => false,
-    }
-}
-
 fn is_blendable(term: &Term) -> bool {
     match term {
         // Simple values are always blendable.
@@ -202,38 +182,45 @@ impl Compiler {
     }
         
     fn compile_let(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
-        self.compile_term(value, heap, false)?;
-        if self.scope_depth > 0 { self.add_local(name.to_string()); } 
-        else {
-            let name_idx = self.add_name_constant(name.to_string());
-            self.emit_opcode(OpCode::OpDefineGlobal); self.emit_byte(name_idx as u8);
-        }
-        self.compile_term(body, heap, is_tail)?;
-        Ok(())
-    }
-    
-    fn compile_let_rec(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
-        // 1. Declare the variable in the current scope.
-        if self.scope_depth > 0 {
+        self.compile_term(value, heap, false)?; // Compile the value, pushing it onto the stack
+
+        if self.scope_depth > 0 { // If not at the global scope, it's a local
+            self.begin_scope();
             self.add_local(name.to_string());
-        }
-        let name_idx = self.add_name_constant(name.to_string());
-    
-        // 2. Compile the closure.
-        self.compile_term(value, heap, false)?;
-    
-        // 3. Bind the compiled closure to its name.
-        if self.scope_depth > 0 {
-            // The closure is on the stack. The local slot created by add_local is
-            // at the same position. It's implicitly "set".
-        } else {
+            self.compile_term(body, heap, is_tail)?;
+            self.end_scope();
+        } else { // It's a global variable.
+            let name_idx = self.add_name_constant(name.to_string());
             self.emit_opcode(OpCode::OpDefineGlobal);
             self.emit_byte(name_idx as u8);
+            // The body is compiled *without* creating a new scope, so the global persists.
+            self.compile_term(body, heap, is_tail)?;
+            // We pop the value from the stack after the body has used it, unless it was the last expression.
+            if !is_tail {
+                self.emit_opcode(OpCode::OpPop);
+            }
         }
-        
-        // 4. Compile the body of the let-rec. The binding is now active.
-        self.compile_term(body, heap, is_tail)?;
-    
+        Ok(())
+    }
+
+    fn compile_let_rec(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
+        let name_idx = self.add_name_constant(name.to_string());
+
+        if self.scope_depth > 0 {
+            self.begin_scope();
+            self.add_local(name.to_string());
+            self.compile_term(value, heap, false)?;
+            self.compile_term(body, heap, is_tail)?;
+            self.end_scope();
+        } else { // It's a global recursive function
+            self.compile_term(value, heap, false)?;
+            self.emit_opcode(OpCode::OpDefineGlobal);
+            self.emit_byte(name_idx as u8);
+            self.compile_term(body, heap, is_tail)?;
+            if !is_tail {
+                self.emit_opcode(OpCode::OpPop);
+            }
+        }
         Ok(())
     }
 
@@ -297,18 +284,6 @@ impl Compiler {
             self.emit_opcode(opcode);
             return Ok(());
         }
-
-        // // Check for interpreter-only builtins
-        // let interpreter_only_builtins = [
-        //     // ML
-        //     "tensor", "add_t", "matmul", "sigmoid_t", "reshape", "transpose",
-        //     "sum_t", "mean_t", "get_data", "get_shape", "get_grad", "grad"
-        // ];
-        // if interpreter_only_builtins.contains(&op) {
-        //     return Err(CompileError::UnsupportedExpression(format!(
-        //         "'{}' is not yet supported in the high-performance VM. Try the tree-walking interpreter.", op
-        //     )));
-        // }
 
         if let Some((index, arity)) = natives::NATIVE_MAP.get(op) {
             if arg_count != *arity {
@@ -379,8 +354,6 @@ impl Compiler {
     fn emit_byte(&mut self, byte: u8) { self.current_chunk().write(byte, 0); }
 
     fn emit_opcode(&mut self, op: OpCode) { self.current_chunk().write_opcode(op, 0); }
-
-    fn emit_return(&mut self) { self.emit_opcode(OpCode::OpReturn); }
 
     fn emit_constant(&mut self, value: f64) {
         let const_idx = self.add_f64_constant(value);
