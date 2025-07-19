@@ -25,19 +25,19 @@ impl std::fmt::Display for InterpretError {
 
 /// Represents a single ongoing function call.
 #[derive(Debug)]
-struct CallFrame {
+pub struct CallFrame {
     /// Heap ID of the Function object being executed.
-    closure_id: u64,
+    pub closure_id: u64,
     /// The instruction pointer for this call, pointing into the function's chunk.
-    ip: usize,
+    pub ip: usize,
     /// The index into the VM's main value stack where this function's locals start.
-    stack_slot: usize,
+    pub stack_slot: usize,
 }
 
 /// The Virtual Machine.
 pub struct VM<'a> {
     pub heap: &'a mut Heap,
-    frames: Vec<CallFrame>,
+    pub frames: Vec<CallFrame>,
     pub stack: Vec<f64>,
     globals: HashMap<String, f64>,
     open_upvalues: Vec<u64>,
@@ -56,9 +56,11 @@ pub fn interpret(source: &str, heap: &mut Heap) -> Result<f64, InterpretError> {
 
     let mut vm = VM::new(heap);
     
+    // Prime the VM for the first call
     vm.stack.push(encode_heap_pointer(main_closure_id));
     vm.call_value(encode_heap_pointer(main_closure_id), 0)?;
 
+    // Start the main execution loop
     vm.run()
 }
 
@@ -73,8 +75,14 @@ impl<'a> VM<'a> {
         }
     }
 
-    /// The main execution loop of the VM.
-    fn run(&mut self) -> Result<f64, InterpretError> {
+    /// The re-entrant execution loop of the VM.
+    /// It runs until the number of call frames drops below what it was when the loop was entered.
+    pub fn run(&mut self) -> Result<f64, InterpretError> {
+        let frame_count_at_start = self.frames.len();
+        if frame_count_at_start == 0 {
+            return Err(InterpretError::Runtime("Cannot run VM without a call frame.".to_string()));
+        }
+
         loop {
             let frame = self.frames.last().unwrap();
             let ip = frame.ip;
@@ -98,7 +106,17 @@ impl<'a> VM<'a> {
                     let result = self.pop_stack()?;
                     let frame = self.frames.pop().unwrap();
                     self.close_upvalues(frame.stack_slot);
-                    if self.frames.is_empty() { return Ok(result); }
+
+                    // If we have returned from the call that started this `run` invocation,
+                    // then we are done with this sub-computation.
+                    if self.frames.len() < frame_count_at_start {
+                        // The `run` contract is to leave the result on the stack for the native.
+                        // However, for cleanliness, we also return it as a Rust value.
+                        self.stack.push(result);
+                        return Ok(result);
+                    }
+
+                    // Otherwise, it was a normal function return within the same `run` context.
                     self.stack.truncate(frame.stack_slot);
                     self.stack.push(result);
                 }
@@ -106,6 +124,7 @@ impl<'a> VM<'a> {
                     let const_val = self.read_constant()?;
                     self.stack.push(const_val);
                 }
+                // ... (all other opcodes are the same as before) ...
                 OpCode::OpNil => self.stack.push(NIL_VALUE),
                 OpCode::OpTrue => self.stack.push(1.0),
                 OpCode::OpFalse => self.stack.push(0.0),
@@ -291,12 +310,13 @@ impl<'a> VM<'a> {
                     let native = &natives::NATIVES[native_index];
                     (native.func)(self)?;
                 }
+                // The new calculus opcodes are natives now, no need for new match arms.
                 _ => return Err(InterpretError::Runtime(format!("Unimplemented opcode {:?}", op))),
             }
         }
     }
 
-    fn call_value(&mut self, func_val: f64, arg_count: usize) -> Result<(), InterpretError> {
+    pub fn call_value(&mut self, func_val: f64, arg_count: usize) -> Result<(), InterpretError> {
         let closure_id = match decode_heap_pointer(func_val) {
             Some(id) => id,
             None => return Err(InterpretError::Runtime("Can only call functions.".to_string())),
@@ -356,6 +376,7 @@ impl<'a> VM<'a> {
 
     fn read_byte(&mut self) -> u8 {
         let frame = self.frames.last_mut().unwrap();
+        frame.ip += 1;
         let closure = match self.heap.get(frame.closure_id).unwrap() {
             HeapObject::Closure(c) => c,
             _ => panic!("Invalid state in read_byte: expected closure"),
@@ -364,13 +385,12 @@ impl<'a> VM<'a> {
             HeapObject::Function(f) => f,
             _ => panic!("Invalid state in read_byte: expected function"),
         };
-        let byte = func.chunk.code[frame.ip];
-        frame.ip += 1;
-        byte
+        func.chunk.code[frame.ip - 1]
     }
 
     fn read_short(&mut self) -> usize {
         let frame = self.frames.last_mut().unwrap();
+        frame.ip += 2;
         let closure = match self.heap.get(frame.closure_id).unwrap() {
             HeapObject::Closure(c) => c,
             _ => panic!("Invalid state in read_short: expected closure"),
@@ -379,7 +399,6 @@ impl<'a> VM<'a> {
             HeapObject::Function(f) => f,
             _ => panic!("Invalid state in read_short: expected function"),
         };
-        frame.ip += 2;
         let high = func.chunk.code[frame.ip - 2] as usize;
         let low = func.chunk.code[frame.ip - 1] as usize;
         (high << 8) | low

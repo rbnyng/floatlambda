@@ -228,23 +228,23 @@ impl Term {
                             let heap_obj = heap.get(id).cloned().ok_or(EvalError::DanglingPointerError(id))?;
                             match heap_obj {
                                 HeapObject::UserFunc(closure) => {
-                                                                                                                        let mut new_env_map = closure.env.as_ref().clone();
-                                                                                                                        new_env_map.insert(closure.param, arg_val);
-                                                                                                                        current_env = Rc::new(new_env_map);
-                                                                                                                        current_term = *closure.body;
-                                                                                                                        continue 'trampoline; 
-                                                                                                                    }
+                                    let mut new_env_map = closure.env.as_ref().clone();
+                                    new_env_map.insert(closure.param, arg_val);
+                                    current_env = Rc::new(new_env_map);
+                                    current_term = *closure.body;
+                                    continue 'trampoline; 
+                                }
                                 HeapObject::BuiltinFunc(mut closure) => {
-                                                                                                                        closure.args.push(arg_val);
-                                                                                                                        if closure.args.len() == closure.arity {
-                                                                                                                            result_val = execute_builtin(&closure.op, &closure.args, heap)?;
-                                                                                                                            continue; // Stay in continuation loop with new value.
-                                                                                                                        } else {
-                                                                                                                            let new_id = heap.register(HeapObject::BuiltinFunc(closure));
-                                                                                                                            result_val = encode_heap_pointer(new_id);
-                                                                                                                            continue; // Stay in continuation loop with new value.
-                                                                                                                        }
-                                                                                                                    }
+                                    closure.args.push(arg_val);
+                                    if closure.args.len() == closure.arity {
+                                        result_val = execute_builtin(&closure.op, &closure.args, heap)?;
+                                        continue; // Stay in continuation loop with new value.
+                                    } else {
+                                        let new_id = heap.register(HeapObject::BuiltinFunc(closure));
+                                        result_val = encode_heap_pointer(new_id);
+                                        continue; // Stay in continuation loop with new value.
+                                    }
+                                }
                                 HeapObject::Pair(_, _) => return Err(EvalError::TypeError(format!("Cannot apply a non-function value: Pair<{}>", id))),
                                 HeapObject::Tensor(_) => return Err(EvalError::TypeError(format!("Cannot apply a non-function value: Tensor<{}>", id))),
                                 HeapObject::Free(_) => return Err(EvalError::DanglingPointerError(id)),

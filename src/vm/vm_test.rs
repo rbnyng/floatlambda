@@ -16,6 +16,14 @@ mod vm_tests {
         }
     }
 
+    // Helper to test for a successful run with wider tolerance for calculus results
+    fn test_calculus_source(source: &str, expected: f64) {
+        let mut heap = Heap::new();
+        let result = vm::interpret(source, &mut heap).unwrap();
+        // Calculus results are approximations, allow wider tolerance (e.g., 0.1)
+        assert!((result - expected).abs() < 0.1, "Expected {}, got {}", expected, result);
+    }
+
     // Helper to test for a runtime error
     fn test_runtime_error(source: &str) {
         let mut heap = Heap::new();
@@ -146,5 +154,73 @@ mod vm_tests {
         // "Hi" -> (cons 72 (cons 105 nil))
         let source = "let s = (cons 72.0 (cons 105.0 nil)) in (print s)";
         test_source(source, 1.0);
+    }
+
+    #[test]
+    fn test_vm_diff_constant_function() {
+        let source = "(diff (λx. 5.0) 10.0)";
+        test_calculus_source(source, 0.0);
+    }
+
+    #[test]
+    fn test_vm_diff_identity_function() {
+        let source = "(diff (λx. x) 42.0)";
+        test_calculus_source(source, 1.0);
+    }
+
+    #[test]
+    fn test_vm_diff_x_squared() {
+        let source = "let f = (λx. (* x x)) in (diff f 5.0)";
+        test_calculus_source(source, 10.0); // d/dx(x^2) = 2x, at x=5 is 10
+    }
+
+    #[test]
+    fn test_vm_diff_x_cubed() {
+        let source = "let f = (λx. (* x (* x x))) in (diff f 2.0)";
+        test_calculus_source(source, 12.0); // d/dx(x^3) = 3x^2, at x=2 is 12
+    }
+
+    #[test]
+    fn test_vm_integrate_constant() {
+        let source = "(integrate (λx. 1.0) 0.0 5.0)";
+        test_calculus_source(source, 5.0); // ∫₀⁵ 1 dx = 5
+    }
+
+    #[test]
+    fn test_vm_integrate_x() {
+        let source = "(integrate (λx. x) 0.0 2.0)";
+        test_calculus_source(source, 2.0); // ∫₀² x dx = x²/2 |₀² = 2
+    }
+
+    #[test]
+    fn test_vm_integrate_x_squared() {
+        let source = "let f = (λx. (* x x)) in (integrate f 0.0 3.0)";
+        test_calculus_source(source, 9.0); // ∫₀³ x² dx = x³/3 |₀³ = 9
+    }
+
+    #[test]
+    fn test_vm_higher_order_diff() {
+        // Second derivative: f''(x) = d/dx(d/dx(f(x)))
+        let source = "
+            let f = (λx. (* x (* x x))) in   # f(x) = x³
+            let f_prime = (λx. (diff f x)) in # f'(x)
+            (diff f_prime 2.0)                 # f''(2)
+        ";
+        // f(x) = x³, f'(x) = 3x², f''(x) = 6x, f''(2) = 12
+        test_calculus_source(source, 12.0);
+    }
+
+    #[test]
+    fn test_vm_fundamental_theorem_of_calculus() {
+        // F(x) = ∫₀ˣ t² dt, then F'(x) should equal x²
+        let source = "
+            let f = (λx. (* x x)) in
+            let F = (λx. (integrate f 0.0 x)) in
+            let x_val = 5.0 in
+            let derivative_of_F = (diff F x_val) in
+            let original_f = (f x_val) in
+            ((- derivative_of_F) original_f) # Should be close to 0
+        ";
+        test_calculus_source(source, 0.0);
     }
 }
