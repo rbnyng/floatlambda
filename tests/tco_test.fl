@@ -5,12 +5,12 @@
 # Test harness
 let test = (λtest_name. λexpected. λactual.
   let passed = (eq? expected actual) in
-  if passed then
-    (print (append (cons 80.0 (cons 65.0 (cons 83.0 (cons 83.0 nil)))) test_name)) # "PASS"
-  else (
-    (print (append (cons 70.0 (cons 65.0 (cons 73.0 (cons 76.0 nil)))) test_name)) # "FAIL"
-    (print (cons 10.0 nil)) # newline
-  )
+  let _ = if passed then (print "PASS ") else (print "FAIL ") in
+  let _ = (print test_name) in
+  (print "\n")
+) in
+let print_test_header = (λname.
+  (print (append name "\n"))
 ) in
 
 let print_test_header = (λname.

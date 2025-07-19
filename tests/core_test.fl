@@ -34,12 +34,26 @@ let rec string_eq = (λs1. λs2.
 ) in
 
 # Simple test function
-let test = (λtest_num. λexpected. λactual.
+let test = (λtest_num_char_code. λexpected. λactual.
   let passed = (eq? expected actual) in
-  if passed then
-    (print (cons 80.0 (cons 65.0 (cons 83.0 (cons 83.0 (cons 58.0 (cons 32.0 (cons test_num nil))))))))  # "PASS: " + test_num
+  let _ = if passed then
+    (print (cons 80.0 (cons 65.0 (cons 83.0 (cons 83.0 (cons 58.0 (cons 32.0 nil)))))))  # "PASS: "
   else
-    (print (cons 70.0 (cons 65.0 (cons 73.0 (cons 76.0 (cons 58.0 (cons 32.0 (cons test_num nil))))))))  # "FAIL: " + test_num
+    (print (cons 70.0 (cons 65.0 (cons 73.0 (cons 76.0 (cons 58.0 (cons 32.0 nil))))))) in # "FAIL: "
+  
+  let _ = (print (cons test_num_char_code nil)) in # Print the number as a character
+  (print (cons 10.0 nil)) # Print newline
+) in
+
+let test_list = (λtest_num_char_code. λexpected. λactual.
+  let passed = (list_eq expected actual) in
+  let _ = if passed then
+    (print (cons 80.0 (cons 65.0 (cons 83.0 (cons 83.0 (cons 58.0 (cons 32.0 nil)))))))
+  else
+    (print (cons 70.0 (cons 65.0 (cons 73.0 (cons 76.0 (cons 58.0 (cons 32.0 nil))))))) in
+
+  let _ = (print (cons test_num_char_code nil)) in # Print the number as a character
+  (print (cons 10.0 nil)) # Print newline
 ) in
 
 # Test list equality
@@ -48,14 +62,6 @@ let rec list_eq = (λl1. λl2.
   else if (or (null? l1) (null? l2)) then 0
   else if (eq? (car l1) (car l2)) then (list_eq (cdr l1) (cdr l2))
   else 0
-) in
-
-let test_list = (λtest_num. λexpected. λactual.
-  let passed = (list_eq expected actual) in
-  if passed then
-    (print (cons 80.0 (cons 65.0 (cons 83.0 (cons 83.0 (cons 58.0 (cons 32.0 (cons test_num nil))))))))
-  else
-    (print (cons 70.0 (cons 65.0 (cons 73.0 (cons 76.0 (cons 58.0 (cons 32.0 (cons test_num nil))))))))
 ) in
 
 # Print start message
