@@ -86,6 +86,40 @@ The `==` operator is scale-invariant, meaning it compares numbers based on their
 
 It uses the formula $e^{- \\frac{|x-y|}{\\max(|x|, |y|, 1.0)}}$. For strict, bit-wise equality, use `eq?`.
 
+## Fuzzy Function Application
+
+While you cannot blend function objects themselves, you can create "ensemble effects" by blending their evaluations:
+
+```
+# You can't blend the functions directly:
+let f = if 0.6 then (λx.(* x 2)) else (λx.(* x 3))    # Discrete choice
+
+# But you can blend their applications:
+let result = if 0.6 then ((λx.(* x 2)) 10) else ((λx.(* x 3)) 10)
+# → 0.6 * 20 + 0.4 * 30 = 24.0
+```
+
+This creates **weighted ensemble evaluation** - a form of soft function composition:
+
+```
+# Fuzzy classifier ensemble
+let classify = λx.
+    if (confidence_model_a x) then (model_a x)
+    else if (confidence_model_b x) then (model_b x) 
+    else (fallback_model x)
+
+# Fuzzy mathematical operations  
+let smooth_max = λa.λb.λsharpness.
+    if sharpness then a else b    # Blends between max-like behaviors
+
+# Probabilistic function selection
+let adaptive_transform = λdata.λcomplexity.
+    if complexity then (advanced_transform data) 
+    else (simple_transform data)
+```
+
+This enables continuous ensemble methods where multiple approaches are automatically weighted based on fuzzy conditions - turning discrete algorithmic choices into smooth interpolations between strategies.
+
 ## Data Structures: Lists
 
 Lists are built using cons cells, like in Lisp:

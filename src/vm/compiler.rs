@@ -64,9 +64,9 @@ fn is_blendable(term: &Term) -> bool {
             if matches!(&**f, Term::Var(_)) {
                 return false;
             }
-            // An application of an inline lambda is not blendable.
+            // Special case: lambda applications ARE blendable even though lambdas aren't
             if matches!(&**f, Term::Lam(_, _)) {
-                return false;
+                return is_blendable(a);  // Only check the argument
             }
 
             // A call to 'cons' produces a pointer, so it's not blendable.
@@ -225,16 +225,18 @@ impl Compiler {
     }
 
     fn compile_if(&mut self, cond: &Term, then_b: &Term, else_b: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
+        // println!("Compiling if: then_blendable={}, else_blendable={}", is_blendable(then_b), is_blendable(else_b));
+
         if is_blendable(then_b) && is_blendable(else_b) {
             // --- STRATEGY 1: FUZZY BLEND ---
-            // (This part remains the same)
+            // println!("Using OpBlend strategy");
             self.compile_term(cond, heap, false)?;
             self.compile_term(then_b, heap, false)?;
             self.compile_term(else_b, heap, false)?;
             self.emit_opcode(OpCode::OpBlend);
         } else {
             // --- STRATEGY 2: JUMP-BASED (TCO-compatible) ---
-            // (This part also remains the same)
+            // println!("Using jump strategy");
             self.compile_term(cond, heap, false)?;
         
             let else_jump = self.emit_jump(OpCode::OpJumpIfFalse);

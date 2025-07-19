@@ -46,7 +46,7 @@ pub struct VM<'a> {
     pub heap: &'a mut Heap,
     pub frames: Vec<CallFrame>,
     pub stack: Vec<f64>,
-    pub globals: HashMap<String, f64>, // Make globals public
+    pub globals: HashMap<String, f64>,
     open_upvalues: Vec<u64>,
 }
 
@@ -75,7 +75,6 @@ impl<'a> VM<'a> {
     pub fn compile_and_load(&mut self, source: &str) -> Result<u64, InterpretError> {
         let term = crate::parser::parse(source).map_err(|e| InterpretError::Compile(CompileError::Parse(e)))?;
 
-        // The compiler is now part of the VM's process
         let mut main_func = compiler::compile(&term, self.heap).map_err(InterpretError::Compile)?;
         main_func.name = "<script>".to_string();
 
@@ -124,16 +123,16 @@ impl<'a> VM<'a> {
                     let frame = self.frames.pop().unwrap();
                     self.close_upvalues(frame.stack_slot);
 
-                    // If we have returned from the call that started this `run` invocation,
+                    // If we have returned from the call that started this run invocation,
                     // then we are done with this sub-computation.
                     if self.frames.len() < frame_count_at_start {
-                        // The `run` contract is to leave the result on the stack for the native.
+                        // The run contract is to leave the result on the stack for the native.
                         // However, for cleanliness, we also return it as a Rust value.
                         self.stack.push(result);
                         return Ok(result);
                     }
 
-                    // Otherwise, it was a normal function return within the same `run` context.
+                    // Otherwise, it was a normal function return within the same run context.
                     self.stack.truncate(frame.stack_slot);
                     self.stack.push(result);
                 }
@@ -141,7 +140,6 @@ impl<'a> VM<'a> {
                     let const_val = self.read_constant()?;
                     self.stack.push(const_val);
                 }
-                // ... (all other opcodes are the same as before) ...
                 OpCode::OpNil => self.stack.push(NIL_VALUE),
                 OpCode::OpTrue => self.stack.push(1.0),
                 OpCode::OpFalse => self.stack.push(0.0),
@@ -255,16 +253,20 @@ impl<'a> VM<'a> {
                     let then_val = self.pop_stack()?;
                     let cond_val = self.pop_stack()?;
             
-                    // Runtime safety check: if branches produced non-numbers (pointers/nil),
-                    // we must perform a discrete choice, not arithmetic.
-                    if !then_val.is_finite() || !else_val.is_finite() {
+                    let then_is_pointer = decode_heap_pointer(then_val).is_some();
+                    let else_is_pointer = decode_heap_pointer(else_val).is_some();
+                    let then_is_nil = then_val == NIL_VALUE;
+                    let else_is_nil = else_val == NIL_VALUE;
+                
+                    if then_is_pointer || else_is_pointer || then_is_nil || else_is_nil {
+                        // Can't blend pointers/nil, discrete choice
                         if cond_val >= 0.5 && cond_val != NIL_VALUE {
                             self.stack.push(then_val);
                         } else {
                             self.stack.push(else_val);
                         }
                     } else {
-                        // Both are plain numbers, so we can blend.
+                        // Both are numbers, blend them
                         let weight = if cond_val == NIL_VALUE { 0.0 } else { cond_val.max(0.0).min(1.0) };
                         let result = weight * then_val + (1.0 - weight) * else_val;
                         self.stack.push(result);
