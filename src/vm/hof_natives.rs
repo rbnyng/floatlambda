@@ -17,7 +17,7 @@ fn native_length(vm: &mut VM) -> Result<(), InterpretError> {
 
         if let Some(id) = decode_heap_pointer(current_list) {
             if let Some(HeapObject::Pair(_, cdr)) = vm.heap.get(id) {
-                count  = 1.0;
+                count += 1.0;
                 current_list = *cdr;
             } else {
                 return Err(InterpretError::Runtime("'length' expects a proper list.".to_string()));
@@ -194,12 +194,23 @@ mod tests {
     // Helper to compile a function and load it onto the heap.
     // Returns a pointer to the compiled closure.
     fn compile_and_load_fn(vm: &mut VM, source: &str) -> f64 {
-        let term = parser::parse(source).unwrap();
-        let function = compiler::compile(&term, vm.heap).unwrap();
-        let func_id = vm.heap.register(HeapObject::Function(function));
-        let closure = crate::vm::closure::Closure { func_id, upvalues: std::rc::Rc::new(vec![]) };
-        let closure_id = vm.heap.register(HeapObject::Closure(closure));
-        encode_heap_pointer(closure_id)
+        // Save stack size to restore it later, ensuring the helper doesn't alter test state.
+        let initial_stack_size = vm.stack.len();
+
+        // 1. Compile the source into a top-level script closure
+        let script_closure_id = vm.compile_and_load(source)
+            .expect("Test function compilation failed");
+
+        // 2. Run the script. This executes the top-level code, which should evaluate
+        //    to a function pointer, and returns that pointer.
+        let result_ptr = vm.prime_and_run(script_closure_id)
+            .expect("Test function script execution failed");
+
+        // 3. Clean up the stack. prime_and_run leaves the result on the stack.
+        vm.stack.truncate(initial_stack_size);
+        
+        // 4. Return the pointer to the actual function we want to test.
+        result_ptr
     }
 
     #[test]
