@@ -169,6 +169,7 @@ impl Heap {
                     if self.marked_bits[i] == GcColor::White {
                         // This is garbage, add it to the free list.
                         if self.objects[i].is_some() && !matches!(self.objects[i], Some(HeapObject::Free(_))) {
+                            // println!("[GC] Sweeping object at ID {}: {:?}", i, self.objects[i]);
                             let next_free = self.free_list_head;
                             self.objects[i] = Some(HeapObject::Free(next_free.unwrap_or(u64::MAX)));
                             self.free_list_head = Some(i as u64);
