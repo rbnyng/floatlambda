@@ -299,8 +299,12 @@ mod tco_benchmarks {
             let result = eval_ok(&tail_recursive);
             let duration = start.elapsed();
             
-            let expected = (n * (n + 1)) / 2;
-            assert_eq!(result, expected as f64);
+            // Cast n to f64 before performing the calculation to avoid integer overflow.
+            let n_f64 = n as f64;
+            let expected = (n_f64 * (n_f64 + 1.0)) / 2.0;
+
+            // Now we are comparing two f64s.
+            assert_eq!(result, expected);
             
             println!("{}: {}ms (result: {})", name, duration.as_millis(), result);
         }
