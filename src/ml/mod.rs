@@ -11,7 +11,7 @@ pub use ops::{add, matmul, sigmoid};
 pub use tensor::DifferentiableTensor;
 
 use crate::error::EvalError;
-use crate::evaluator::{list_to_vec, vec_to_list}; // We need these helpers
+use crate::interpreter::evaluator::{list_to_vec, vec_to_list};
 use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject};
 
 pub fn get_ml_builtin_arity(op: &str) -> Option<usize> {

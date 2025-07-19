@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use super::tensor::DifferentiableTensor;
-use crate::evaluator::apply_function;
+use crate::interpreter::evaluator::apply_function;
 use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject};
 use crate::error::EvalError;
 

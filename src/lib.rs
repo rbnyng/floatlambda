@@ -6,7 +6,7 @@ pub mod ast;
 pub mod error;
 pub mod memory;
 pub mod parser;
-pub mod evaluator;
+pub mod interpreter;
 pub mod ml; 
 pub mod math; 
 pub mod vm;
@@ -57,9 +57,9 @@ mod tests {
 
     #[test]
     fn test_fuzzy_eq() {
-        assert!((evaluator::fuzzy_eq(1.0, 1.0) - 1.0).abs() < 0.001);
-        assert!(evaluator::fuzzy_eq(1.0, 2.0) < 1.0);
-        assert!(evaluator::fuzzy_eq(1000.0, 1001.0) > 0.99); // Should be very close to 1
+        assert!((interpreter::evaluator::fuzzy_eq(1.0, 1.0) - 1.0).abs() < 0.001);
+        assert!(interpreter::evaluator::fuzzy_eq(1.0, 2.0) < 1.0);
+        assert!(interpreter::evaluator::fuzzy_eq(1000.0, 1001.0) > 0.99); // Should be very close to 1
     }
 
     #[test]
@@ -174,11 +174,11 @@ mod tests {
     
     #[test]
     fn test_improved_fuzzy_eq() {
-        assert_eq!(evaluator::fuzzy_eq(1.0, 1.0), 1.0);
+        assert_eq!(interpreter::evaluator::fuzzy_eq(1.0, 1.0), 1.0);
         // exp(-1.0 / 2.0) = exp(-0.5)
-        assert!((evaluator::fuzzy_eq(1.0, 2.0) - 0.60653).abs() < 0.0001);
+        assert!((interpreter::evaluator::fuzzy_eq(1.0, 2.0) - 0.60653).abs() < 0.0001);
         // exp(-1.0 / 1001.0)
-        assert!((evaluator::fuzzy_eq(1000.0, 1001.0) - 0.99900).abs() < 0.0001);
+        assert!((interpreter::evaluator::fuzzy_eq(1000.0, 1001.0) - 0.99900).abs() < 0.0001);
     }
 
     #[test]
