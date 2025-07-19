@@ -340,7 +340,7 @@ fn numerical_integration(func: f64, a: f64, b: f64, heap: &mut Heap) -> Result<f
 }
 
 // --- Builtin Logic Helpers ---
-fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
+pub fn get_builtin_arity(op: &str) -> Result<usize, EvalError> {
     if let Some(arity) = ml::get_ml_builtin_arity(op) {
         return Ok(arity);
     }

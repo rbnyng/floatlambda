@@ -205,7 +205,48 @@ impl Parser {
         for term in terms {
             app = Term::App(Box::new(app), Box::new(term));
         }
+        if let Term::App(func, arg) = &app {
+            if let Term::Builtin(op) = &**func {
+                if let Ok(arity) = crate::interpreter::evaluator::get_builtin_arity(op) {
+                    if arity > 1 {
+                        // This is a partial application; desugar it.
+                        return Ok(self.desugar_partial_application(op, vec![arg.as_ref().clone()]));
+                    }
+                }
+            }
+        }
         Ok(app)
+    }
+
+    fn desugar_partial_application(&self, op: &str, applied_args: Vec<Term>) -> Term {
+        let total_arity = crate::interpreter::evaluator::get_builtin_arity(op).unwrap();
+        let remaining_arity = total_arity - applied_args.len();
+        
+        // Generate parameter names: x1, x2, etc.
+        let mut params = Vec::new();
+        let mut param_vars = Vec::new();
+        for i in 0..remaining_arity {
+            let param_name = format!("x{}", i + 1);
+            params.push(param_name.clone());
+            param_vars.push(Term::Var(param_name));
+        }
+        
+        // Build the full application: (op applied_arg1 applied_arg2 x1 x2 ...)
+        let mut full_app = Term::Builtin(op.to_string());
+        for arg in applied_args {
+            full_app = Term::App(Box::new(full_app), Box::new(arg));
+        }
+        for var in param_vars {
+            full_app = Term::App(Box::new(full_app), Box::new(var));
+        }
+        
+        // Wrap in nested lambdas: λx1.λx2....full_app
+        let mut result = full_app;
+        for param in params.into_iter().rev() {
+            result = Term::Lam(param, Box::new(result));
+        }
+        
+        result
     }
 
     fn parse_lambda(&mut self) -> Result<Term, ParseError> {
