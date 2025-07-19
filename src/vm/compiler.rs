@@ -154,33 +154,58 @@ impl Compiler {
     }
 
     fn compile_app(&mut self, func: &Term, arg: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
+        // Unwrap the chain of applications to find the root function and all arguments.
         let mut args = vec![arg];
         let mut current_func = func;
         while let Term::App(f, a) = current_func {
             args.push(a);
             current_func = f;
         }
-        
+
+        let mut use_flattened_call = false;
         if let Term::Builtin(op) = current_func {
+            // Check if the number of arguments matches the builtin's expected arity.
+            if let Ok(arity) = crate::interpreter::evaluator::get_builtin_arity(op) {
+                if args.len() == arity {
+                    // This is a full, flat application like (+ 1 2). We can use the optimized path.
+                    use_flattened_call = true;
+                }
+            }
+        }
+
+        if use_flattened_call {
+            // OPTIMIZED PATH: For calls like (+ 1 2) or (car mylist).
+            // The number of arguments matches the builtin's arity exactly.
+            let op = match current_func { Term::Builtin(op) => op, _ => unreachable!() };
+            // Compile arguments in reverse order (since they were collected backwards).
             for arg in args.iter().rev() {
                 self.compile_term(arg, heap, false)?;
             }
+            // Compile the multi-argument builtin.
             self.compile_builtin(op, args.len())?;
         } else {
-            self.compile_term(func, heap, false)?;
-            self.compile_term(arg, heap, false)?;
+            // DEFAULT PATH: For nested calls like ((car mylist) 99) or partial applications.
+            // This path correctly respects parenthesis by compiling recursively.
             
+            // 1. Compile the function part. For ((car mylist) 99), this compiles (car mylist)
+            //    and leaves a closure on the stack.
+            self.compile_term(func, heap, false)?;
+            
+            // 2. Compile the argument part. This compiles 99.
+            self.compile_term(arg, heap, false)?;
+
+            // 3. Emit the call instruction.
             if is_tail {
                 self.emit_opcode(OpCode::OpTailCall);
             } else {
                 self.emit_opcode(OpCode::OpCall);
             }
-            self.emit_byte(1);
+            self.emit_byte(1); // An AST App node always has exactly one argument.
         }
         
         Ok(())
     }
-        
+
     fn compile_let(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
         self.compile_term(value, heap, false)?; // Compile the value, pushing it onto the stack
 
