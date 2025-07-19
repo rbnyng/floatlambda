@@ -16,7 +16,12 @@ pub enum OpCode {
     OpFalse,
     /// Pops the top value from the stack.
     OpPop,
-    
+
+    // --- Data Structures ---
+    OpCons,
+    OpCar,
+    OpCdr,
+
     // --- Unary Operations ---
     /// Negates the top value on the stack.
     OpNegate,
@@ -55,13 +60,16 @@ pub enum OpCode {
     OpCall,
     OpClosure, 
     OpTailCall, 
-    
+
     // --- Jumps ---
     /// Unconditionally jumps forward by a 16-bit offset.
     OpJump,
     /// Jumps forward by a 16-bit offset if the top of the stack is falsey (0.0 or nil).
     OpJumpIfFalse,
 
+    // --- Native Interface ---
+    OpNative,
+    
     // --- Control Flow ---
     /// Marks the end of a function's execution.
     OpReturn,

@@ -15,7 +15,7 @@ pub const LN_2: f64 = std::f64::consts::LN_2;
 pub const LN_10: f64 = std::f64::consts::LN_10;
 
 // Helper for gamma function (Lanczos approximation)
-fn gamma_lanczos(z: f64) -> f64 {
+pub fn gamma_lanczos(z: f64) -> f64 {
     if z < 0.5 {
         // Use reflection formula: Γ(z)Γ(1-z) = π/sin(πz)
         PI / (PI * z).sin() / gamma_lanczos(1.0 - z)
@@ -46,7 +46,7 @@ fn gamma_lanczos(z: f64) -> f64 {
 }
 
 // Error function approximation (Abramowitz and Stegun)
-fn erf_approx(x: f64) -> f64 {
+pub fn erf_approx(x: f64) -> f64 {
     if x == 0.0 { return 0.0; }
     
     let sign = if x > 0.0 { 1.0 } else { -1.0 };

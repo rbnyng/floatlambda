@@ -111,4 +111,34 @@ mod vm_tests {
         ";
         test_source(source, 42.0);
     }
+
+    #[test]
+    fn test_vm_data_structures() {
+        test_source("(car (cons 10 20))", 10.0);
+        test_source("(cdr (cons 10 20))", 20.0);
+        test_source("let l = (cons 1 (cons 2 nil)) in (car (cdr l))", 2.0);
+    }
+
+    #[test]
+    fn test_vm_data_structure_errors() {
+        test_runtime_error("(car 123)");
+        test_runtime_error("(cdr 42.0)");
+        test_runtime_error("(car nil)");
+    }
+    
+    #[test]
+    fn test_vm_native_functions() {
+        test_source("(sqrt 16)", 4.0);
+        test_source("(sqrt -1)", f64::NAN);
+        test_source("pi", std::f64::consts::PI);
+    }
+
+    #[test]
+    fn test_vm_native_print() {
+        // Can't easily assert stdout, but we can ensure it runs without error
+        // and returns the correct success value (1.0).
+        // "Hi" -> (cons 72 (cons 105 nil))
+        let source = "let s = (cons 72.0 (cons 105.0 nil)) in (print s)";
+        test_source(source, 1.0);
+    }
 }

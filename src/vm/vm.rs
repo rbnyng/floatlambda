@@ -1,11 +1,12 @@
 // src/vm/vm.rs
 
-use std::collections::HashMap;
-use std::rc::Rc;
 use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject, NIL_VALUE};
 use crate::vm::closure::{Closure as VMClosure, Upvalue};
 use crate::vm::compiler::{compile, CompileError};
+use crate::vm::natives;
 use crate::vm::opcode::OpCode;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum InterpretError {
@@ -26,9 +27,9 @@ struct CallFrame {
 
 /// The Virtual Machine.
 pub struct VM<'a> {
-    heap: &'a mut Heap,
+    pub heap: &'a mut Heap,
     frames: Vec<CallFrame>,
-    stack: Vec<f64>,
+    pub stack: Vec<f64>,
     globals: HashMap<String, f64>,
     open_upvalues: Vec<u64>,
 }
@@ -66,7 +67,6 @@ impl<'a> VM<'a> {
     /// The main execution loop of the VM.
     fn run(&mut self) -> Result<f64, InterpretError> {
         loop {
-            // Get necessary info from the current frame.
             let frame = self.frames.last().unwrap();
             let ip = frame.ip;
             let closure_id = frame.closure_id;
@@ -100,6 +100,30 @@ impl<'a> VM<'a> {
                 OpCode::OpNil => self.stack.push(NIL_VALUE),
                 OpCode::OpTrue => self.stack.push(1.0),
                 OpCode::OpFalse => self.stack.push(0.0),
+                OpCode::OpCons => {
+                    let cdr_val = self.pop_stack()?;
+                    let car_val = self.pop_stack()?;
+                    let pair_id = self.heap.register(HeapObject::Pair(car_val, cdr_val));
+                    self.stack.push(encode_heap_pointer(pair_id));
+                }
+                OpCode::OpCar => {
+                    let val = self.pop_stack()?;
+                    let pair_id = decode_heap_pointer(val)
+                        .ok_or_else(|| InterpretError::Runtime("'car' expects a pair, but got a number or nil.".to_string()))?;
+                    match self.heap.get(pair_id) {
+                        Some(HeapObject::Pair(car, _)) => self.stack.push(*car),
+                        _ => return Err(InterpretError::Runtime("'car' expects a pair.".to_string())),
+                    }
+                }
+                OpCode::OpCdr => {
+                    let val = self.pop_stack()?;
+                    let pair_id = decode_heap_pointer(val)
+                        .ok_or_else(|| InterpretError::Runtime("'cdr' expects a pair, but got a number or nil.".to_string()))?;
+                    match self.heap.get(pair_id) {
+                        Some(HeapObject::Pair(_, cdr)) => self.stack.push(*cdr),
+                        _ => return Err(InterpretError::Runtime("'cdr' expects a pair.".to_string())),
+                    }
+                }
                 OpCode::OpNegate => {
                     let val = self.pop_stack()?;
                     self.stack.push(-val);
@@ -146,7 +170,7 @@ impl<'a> VM<'a> {
                     let name_idx = self.read_byte() as usize;
                     let name = {
                         let func = match self.heap.get(func_id).unwrap() {
-                             HeapObject::Function(f) => f, _ => unreachable!(),
+                            HeapObject::Function(f) => f, _ => unreachable!(),
                         };
                         func.chunk.names[name_idx].clone()
                     };
@@ -204,17 +228,14 @@ impl<'a> VM<'a> {
                         return Err(InterpretError::Runtime(format!("Expected {} arguments but got {}.", arity, arg_count)));
                     }
 
-                    // Copy the stack slot before the immutable borrow of self via `frame` ends.
                     let stack_slot = self.frames.last().unwrap().stack_slot;
                     self.close_upvalues(stack_slot);
 
-                    // Overwrite the old function and its args with the new ones.
                     for i in 0..=arg_count {
                         self.stack[stack_slot + i] = self.stack[self.stack.len() - 1 - arg_count + i];
                     }
                     self.stack.truncate(stack_slot + arg_count + 1);
 
-                    // Update the current frame to point to the new function.
                     let current_frame = self.frames.last_mut().unwrap();
                     current_frame.closure_id = new_closure_id;
                     current_frame.ip = 0;
@@ -255,6 +276,11 @@ impl<'a> VM<'a> {
                 OpCode::OpCloseUpvalue => {
                     self.close_upvalues(self.stack.len() - 1);
                     self.pop_stack()?;
+                }
+                OpCode::OpNative => {
+                    let native_index = self.read_byte() as usize;
+                    let native = &natives::NATIVES[native_index];
+                    (native.func)(self)?;
                 }
                 _ => return Err(InterpretError::Runtime(format!("Unimplemented opcode {:?}", op))),
             }
@@ -350,7 +376,7 @@ impl<'a> VM<'a> {
         (high << 8) | low
     }
 
-    fn pop_stack(&mut self) -> Result<f64, InterpretError> {
+    pub fn pop_stack(&mut self) -> Result<f64, InterpretError> {
         self.stack.pop().ok_or_else(|| InterpretError::Runtime("Stack underflow.".to_string()))
     }
 }

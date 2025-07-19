@@ -4,6 +4,7 @@ use crate::ast::Term;
 use crate::memory::{encode_heap_pointer, Heap, HeapObject};
 use crate::vm::chunk::Chunk;
 use crate::vm::function::Function;
+use crate::vm::natives;
 use crate::vm::opcode::OpCode;
 
 #[derive(Debug)]
@@ -36,7 +37,6 @@ struct Compiler {
 
 pub fn compile(term: &Term, heap: &mut Heap) -> Result<Function, CompileError> {
     let mut compiler = Compiler::new(None, "<script>".to_string(), 0);
-    // The top-level of a script is considered a tail position.
     compiler.compile_term(term, heap, true)?;
     Ok(compiler.end_compiler())
 }
@@ -56,7 +56,7 @@ impl Compiler {
         match term {
             Term::Float(n) => self.emit_constant(*n),
             Term::Nil => self.emit_opcode(OpCode::OpNil),
-            Term::Builtin(op) => self.compile_builtin(op)?,
+            Term::Builtin(op) => self.compile_builtin(op, 0)?,
             Term::Lam(p, b) => self.compile_lambda(p, b, heap)?,
             Term::App(f, a) => self.compile_app(f, a, heap, is_tail)?,
             Term::If(c, t, e) => self.compile_if(c, t, e, heap, is_tail)?,
@@ -73,7 +73,6 @@ impl Compiler {
         
         func_compiler.begin_scope();
         func_compiler.add_local(param.clone());
-        // The body of a function is always in a tail position.
         func_compiler.compile_term(body, heap, true)?;
         let mut function = func_compiler.end_compiler();
         let upvalues = func_compiler.upvalues;
@@ -118,57 +117,48 @@ impl Compiler {
             for arg in args.iter().rev() {
                 self.compile_term(arg, heap, false)?;
             }
-            self.compile_builtin(op)?;
+            self.compile_builtin(op, args.len())?;
         } else {
-            // A user function or other expression is being called.
-            // Compile the function and argument, which are never in a tail position themselves.
             self.compile_term(func, heap, false)?;
             self.compile_term(arg, heap, false)?;
             
-            // If the application itself is in a tail position, emit OpTailCall.
             if is_tail {
                 self.emit_opcode(OpCode::OpTailCall);
             } else {
                 self.emit_opcode(OpCode::OpCall);
             }
-            self.emit_byte(1); // Arg count is always 1 for curried calls.
+            self.emit_byte(1);
         }
         
         Ok(())
     }
         
     fn compile_let(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
-        // The value being bound is not in a tail position.
         self.compile_term(value, heap, false)?;
         if self.scope_depth > 0 { self.add_local(name.to_string()); } 
         else {
             let name_idx = self.add_name_constant(name.to_string());
             self.emit_opcode(OpCode::OpDefineGlobal); self.emit_byte(name_idx as u8);
         }
-        // The body's tail status depends on the let statement's context.
         self.compile_term(body, heap, is_tail)?;
         Ok(())
     }
     
     fn compile_let_rec(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
         if self.scope_depth > 0 { self.add_local(name.to_string()); }
-        // The recursive value is not in a tail position.
         self.compile_term(value, heap, false)?;
         if self.scope_depth == 0 {
             let name_idx = self.add_name_constant(name.to_string());
             self.emit_opcode(OpCode::OpDefineGlobal); self.emit_byte(name_idx as u8);
         }
-        // The body's tail status depends on the let rec statement's context.
         self.compile_term(body, heap, is_tail)?;
         Ok(())
     }
 
     fn compile_if(&mut self, cond: &Term, then_b: &Term, else_b: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
-        // The condition is never in a tail position.
         self.compile_term(cond, heap, false)?;
         let else_jump = self.emit_jump(OpCode::OpJumpIfFalse);
         self.emit_opcode(OpCode::OpPop);
-        // The then/else branches are in a tail position if the `if` is.
         self.compile_term(then_b, heap, is_tail)?;
         let end_jump = self.emit_jump(OpCode::OpJump);
         self.patch_jump(else_jump)?;
@@ -178,15 +168,34 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_builtin(&mut self, op: &str) -> Result<(), CompileError> {
-        let op_code = match op {
-            "+" => OpCode::OpAdd, "-" => OpCode::OpSubtract, "*" => OpCode::OpMultiply, "/" => OpCode::OpDivide,
-            "neg" => OpCode::OpNegate, "not" => OpCode::OpNot, "==" => OpCode::OpEqual,
-            "<" => OpCode::OpLess, ">" => OpCode::OpGreater,
-            _ => return Err(CompileError::UnsupportedExpression(op.to_string())),
+    fn compile_builtin(&mut self, op: &str, arg_count: usize) -> Result<(), CompileError> {
+        let maybe_opcode = match op {
+            "+" => Some(OpCode::OpAdd), "-" => Some(OpCode::OpSubtract), 
+            "*" => Some(OpCode::OpMultiply), "/" => Some(OpCode::OpDivide),
+            "neg" => Some(OpCode::OpNegate), "not" => Some(OpCode::OpNot), 
+            "==" => Some(OpCode::OpEqual), "<" => Some(OpCode::OpLess), 
+            ">" => Some(OpCode::OpGreater),
+            "cons" => Some(OpCode::OpCons), "car" => Some(OpCode::OpCar), "cdr" => Some(OpCode::OpCdr),
+            _ => None,
         };
-        self.emit_opcode(op_code);
-        Ok(())
+
+        if let Some(opcode) = maybe_opcode {
+            self.emit_opcode(opcode);
+            return Ok(());
+        }
+
+        if let Some((index, arity)) = natives::NATIVE_MAP.get(op) {
+            if arg_count != *arity {
+                return Err(CompileError::UnsupportedExpression(
+                    format!("Native function '{}' expects {} args, but got {}.", op, arity, arg_count)
+                ));
+            }
+            self.emit_opcode(OpCode::OpNative);
+            self.emit_byte(*index);
+            return Ok(());
+        }
+
+        Err(CompileError::UnsupportedExpression(op.to_string()))
     }
 
     fn resolve_local(&self, name: &str) -> Result<Option<usize>, CompileError> {
