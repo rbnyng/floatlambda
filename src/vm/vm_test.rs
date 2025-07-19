@@ -170,28 +170,28 @@ mod vm_tests {
         test_source("let f = (if 0 then (λx.(+ x 1)) else (λx.(* x 2))) in (f 10)", 20.0);
     }
     
-    // #[test]
-    // fn test_vm_recursion() {
-    //     let source = "
-    //         let rec factorial = (λn. 
-    //             if (< n 2) then 1 
-    //             else (* n (factorial (- n 1)))
-    //         ) in (factorial 5)";
-    //     test_source(source, 120.0);
-    // }
+    #[test]
+    fn test_vm_recursion() {
+        let source = "
+            let rec factorial = (λn. 
+                if (< n 2) then 1 
+                else (* n (factorial (- n 1)))
+            ) in (factorial 5)";
+        test_source(source, 120.0);
+    }
 
-    // #[test]
-    // fn test_vm_tail_call_optimization() {
-    //     // This countdown function will exhaust the call frame stack without TCO.
-    //     // With TCO, it runs in a constant number of frames.
-    //     let source = "
-    //         let rec countdown = (λn.
-    //             if (< n 1) then 42
-    //             else (countdown (- n 1))
-    //         ) in (countdown 10000)
-    //     ";
-    //     test_source(source, 42.0);
-    // }
+    #[test]
+    fn test_vm_tail_call_optimization() {
+        // This countdown function will exhaust the call frame stack without TCO.
+        // With TCO, it runs in a constant number of frames.
+        let source = "
+            let rec countdown = (λn.
+                if (< n 1) then 42
+                else (countdown (- n 1))
+            ) in (countdown 10000)
+        ";
+        test_source(source, 42.0);
+    }
 
     #[test]
     fn test_vm_data_structures() {

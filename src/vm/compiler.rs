@@ -51,6 +51,63 @@ pub fn compile(term: &Term, heap: &mut Heap) -> Result<Function, CompileError> {
     Ok(compiler.end_compiler())
 }
 
+// Helper to check for tail calls to a specific function within a Term.
+// `current_rec_func_name` is Some(name) when inside a let-rec.
+fn is_tail_call(term: &Term, current_rec_func_name: Option<&str>) -> bool {
+    match (term, current_rec_func_name) {
+        // A tail call is an application of the function we're currently defining.
+        (Term::App(f, _), Some(name)) => {
+            if let Term::Var(var_name) = &**f {
+                var_name == name
+            } else {
+                false
+            }
+        },
+        // Recursively check inside the final expression of let/if.
+        (Term::Let(_, _, body), name) => is_tail_call(body, name),
+        (Term::LetRec(_, _, body), name) => is_tail_call(body, name),
+        (Term::If(_, t, e), name) => is_tail_call(t, name) || is_tail_call(e, name),
+        _ => false,
+    }
+}
+
+fn is_blendable(term: &Term) -> bool {
+    match term {
+        // Simple values are always blendable.
+        Term::Float(_) | Term::Builtin(_) => true,
+        Term::Var(_) => true,
+
+        Term::App(f, a) => {
+            // An application of a user function (a Var) is NOT considered blendable
+            // because this is the primary case for tail calls.
+            if matches!(&**f, Term::Var(_)) {
+                return false;
+            }
+            // An application of an inline lambda is not blendable.
+            if matches!(&**f, Term::Lam(_, _)) {
+                return false;
+            }
+
+            // A call to 'cons' produces a pointer, so it's not blendable.
+            if let Term::Builtin(op) = &**f {
+                if op == "cons" { return false; }
+            }
+            // An application of a curried builtin, like ((+ 1) 2), is blendable if its parts are.
+            // This recursively checks down the chain of applications.
+            is_blendable(f) && is_blendable(a)
+        }
+
+        // A 'let' is blendable if its body is.
+        Term::Let(_, _, body) => is_blendable(body),
+
+        // An 'if' is blendable if all its parts are.
+        Term::If(cond, t, e) => is_blendable(cond) && is_blendable(t) && is_blendable(e),
+
+        // These constructs produce pointers or nil, so they are not blendable.
+        Term::Lam(_, _) | Term::LetRec(_, _, _) | Term::Nil => false,
+    }
+}
+
 impl Compiler {
     fn new(enclosing: Option<Box<Compiler>>, name: String, arity: usize) -> Self {
         Compiler {
@@ -155,32 +212,61 @@ impl Compiler {
     }
     
     fn compile_let_rec(&mut self, name: &str, value: &Term, body: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
-        if self.scope_depth > 0 { self.add_local(name.to_string()); }
-        self.compile_term(value, heap, false)?;
-        if self.scope_depth == 0 {
-            let name_idx = self.add_name_constant(name.to_string());
-            self.emit_opcode(OpCode::OpDefineGlobal); self.emit_byte(name_idx as u8);
+        // 1. Declare the variable in the current scope.
+        if self.scope_depth > 0 {
+            self.add_local(name.to_string());
         }
+        let name_idx = self.add_name_constant(name.to_string());
+    
+        // 2. Compile the closure.
+        self.compile_term(value, heap, false)?;
+    
+        // 3. Bind the compiled closure to its name.
+        if self.scope_depth > 0 {
+            // The closure is on the stack. The local slot created by add_local is
+            // at the same position. It's implicitly "set".
+        } else {
+            self.emit_opcode(OpCode::OpDefineGlobal);
+            self.emit_byte(name_idx as u8);
+        }
+        
+        // 4. Compile the body of the let-rec. The binding is now active.
         self.compile_term(body, heap, is_tail)?;
+    
         Ok(())
     }
 
     fn compile_if(&mut self, cond: &Term, then_b: &Term, else_b: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
-        // 1. Compile the condition. Stack: [cond]
-        self.compile_term(cond, heap, false)?;
+        if is_blendable(then_b) && is_blendable(else_b) {
+            // --- STRATEGY 1: FUZZY BLEND ---
+            // (This part remains the same)
+            self.compile_term(cond, heap, false)?;
+            self.compile_term(then_b, heap, false)?;
+            self.compile_term(else_b, heap, false)?;
+            self.emit_opcode(OpCode::OpBlend);
+        } else {
+            // --- STRATEGY 2: JUMP-BASED (TCO-compatible) ---
+            // (This part also remains the same)
+            self.compile_term(cond, heap, false)?;
         
-        // 2. Compile the 'then' branch expression. Stack: [cond, then_result]
-        self.compile_term(then_b, heap, is_tail)?;
-    
-        // 3. Compile the 'else' branch expression. Stack: [cond, then_result, else_result]
-        self.compile_term(else_b, heap, is_tail)?;
+            let else_jump = self.emit_jump(OpCode::OpJumpIfFalse);
+            self.emit_opcode(OpCode::OpPop); // Pop condition if true
         
-        // 4. Call OpBlend. It will consume the top 3 values and push one result.
-        self.emit_opcode(OpCode::OpBlend);
+            self.compile_term(then_b, heap, is_tail)?;
+        
+            let end_jump = self.emit_jump(OpCode::OpJump);
+        
+            self.patch_jump(else_jump)?;
+            self.emit_opcode(OpCode::OpPop); // Pop condition if false
+        
+            self.compile_term(else_b, heap, is_tail)?;
+        
+            self.patch_jump(end_jump)?;
+        }
         
         Ok(())
     }
-        
+
     fn compile_builtin(&mut self, op: &str, arg_count: usize) -> Result<(), CompileError> {
         let maybe_opcode = match op {
             "+" => Some(OpCode::OpAdd), "-" => Some(OpCode::OpSubtract), 
