@@ -635,7 +635,7 @@ fn tree_walker_repl() {
         // GC before evaluation
         let mut roots: Vec<f64> = global_env_map.values().copied().collect();
         roots.push(last_result);
-        heap.start_gc_cycle(&roots); 
+        heap.collect_full(&roots);
 
         match process_input(&input_str, &mut heap, &mut global_env_map, false, true) {
             Ok(result) => {
