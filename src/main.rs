@@ -284,8 +284,11 @@ fn vm_repl() {
         // Root the VM's globals and the last result.
         let mut roots: Vec<f64> = vm.globals.values().copied().collect();
         roots.push(last_result);
-        vm.heap.start_gc_cycle(&roots);
-
+        roots.extend_from_slice(&vm.stack); // Root the entire stack
+        for frame in &vm.frames {
+            roots.push(encode_heap_pointer(frame.closure_id)); // Root active closures
+        }
+        
         print!("> ");
         std::io::Write::flush(&mut std::io::stdout()).unwrap();
         let mut input = String::new();
