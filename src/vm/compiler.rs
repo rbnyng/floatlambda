@@ -285,6 +285,18 @@ impl Compiler {
             return Ok(());
         }
 
+        // Check for interpreter-only builtins
+        let interpreter_only_builtins = [
+            // ML
+            "tensor", "add_t", "matmul", "sigmoid_t", "reshape", "transpose",
+            "sum_t", "mean_t", "get_data", "get_shape", "get_grad", "grad"
+        ];
+        if interpreter_only_builtins.contains(&op) {
+            return Err(CompileError::UnsupportedExpression(format!(
+                "'{}' is not yet supported in the high-performance VM. Try the tree-walking interpreter.", op
+            )));
+        }
+
         if let Some((index, arity)) = natives::NATIVE_MAP.get(op) {
             if arg_count != *arity {
                 return Err(CompileError::UnsupportedExpression(
@@ -296,7 +308,7 @@ impl Compiler {
             return Ok(());
         }
 
-        Err(CompileError::UnsupportedExpression(op.to_string()))
+        Err(CompileError::UnsupportedExpression(format!("Unknown builtin function '{}'.", op)))
     }
 
     fn resolve_local(&self, name: &str) -> Result<Option<usize>, CompileError> {

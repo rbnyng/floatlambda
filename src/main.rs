@@ -12,6 +12,7 @@ use std::rc::Rc;
 // Import the necessary components from our library crate.
 use float_lambda::{
     ast::Term,
+    vm,
     memory::{Heap, HeapObject, decode_heap_pointer, NIL_VALUE},
     parser::parse,
 };
@@ -23,8 +24,11 @@ const PRELUDE_SRC: &str = include_str!("prelude.fl");
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// The script file to run. If not provided, launches the REPL.
+    // The script file to run. If not provided, launches the REPL.
     file: Option<PathBuf>,
+    // Use the slower, feature-complete tree-walking interpreter instead of the VM.
+    #[arg(long, default_value_t = false)]
+    use_tree_walker: bool,
 }
 
 fn show_examples() {
@@ -53,7 +57,23 @@ fn process_input(
     heap: &mut Heap,
     global_env_map: &mut HashMap<String, f64>,
     is_prelude: bool,
+    use_tree_walker: bool,
 ) -> Result<f64, String> {
+
+    // The VM path is now the primary path.
+    // Note: The VM manages its own globals, so `global_env_map` is for the tree-walker.
+    if !use_tree_walker {
+        // We still need to handle the prelude case separately for the VM.
+        // A full solution would make the VM's globals accessible, but for now,
+        // let's just combine the prelude and the script for the VM.
+        if is_prelude {
+            // The prelude is loaded by the main function, so we do nothing here.
+            return Ok(0.0); // Return a dummy value
+        }
+        return vm::interpret(input, heap).map_err(|e| e.to_string());
+    }
+    
+    // --- Tree-walker path (fallback / for ML code) ---
     let term = parse(input).map_err(|e| format!("Parse error: {}", e))?;
     if !is_prelude {
         println!("Parsed: {}", term);
@@ -198,17 +218,30 @@ fn print_heap_object_details(obj: &HeapObject, heap: &Heap) {
 }
 
 // Simple REPL
-pub fn repl() {
-    println!("FloatLambda REPL");
+pub fn repl(use_tree_walker: bool) {
+    println!("FloatLambda REPL (Backend: {})", if use_tree_walker { "Tree-Walker" } else { "VM" });
     println!("Enter expressions, 'quit', ':examples', or ':inspect <id>'");
 
     let mut heap = Heap::new();
-    let mut global_env_map = HashMap::new();
+    let mut tree_walker_globals = HashMap::new(); // Only for tree-walker
     let mut last_result = 0.0;
+    
+    // For the VM, we need to pre-load the prelude.
+    let prelude_and_input = if !use_tree_walker {
+        PRELUDE_SRC.to_string()
+    } else {
+        // For the tree-walker, load prelude into its environment
+        if let Err(e) = process_input(PRELUDE_SRC, &mut heap, &mut tree_walker_globals, true, true) {
+             eprintln!("Fatal Error loading prelude: {}", e);
+             std::process::exit(1);
+        }
+        "".to_string()
+    };
 
     loop {
         // --- GC ---
-        let mut roots: Vec<f64> = global_env_map.values().copied().collect();
+        // The VM handles its own globals, so we only need to root tree-walker globals.
+        let mut roots: Vec<f64> = tree_walker_globals.values().copied().collect();
         roots.push(last_result);
         heap.collect(&roots);
 
@@ -217,7 +250,7 @@ pub fn repl() {
         let mut input = String::new();
         std::io::stdin().read_line(&mut input).unwrap();
         let input_str = input.trim();
-
+        
         if input_str == "quit" || input_str == "exit" { break; }
         if input_str.is_empty() { continue; }
         if input_str == ":examples" {
@@ -243,7 +276,15 @@ pub fn repl() {
             continue;
         }
 
-        match process_input(input_str, &mut heap, &mut global_env_map, false) {
+        let code_to_run = if use_tree_walker {
+            input_str.to_string()
+        } else {
+            // For the VM, we need to combine the prelude with every line.
+            // A more sophisticated REPL would maintain the VM's global state.
+            format!("{}\n{}", prelude_and_input, input_str)
+        };
+
+        match process_input(&code_to_run, &mut heap, &mut tree_walker_globals, false, use_tree_walker) {
             Ok(result) => {
                 last_result = result;
                 print_result(result, &heap);
@@ -258,33 +299,34 @@ fn main() {
 
     // --- SETUP: Create heap and env, then load prelude ---
     let mut heap = Heap::new();
-    let mut global_env_map = HashMap::new();
-
-    if let Err(e) = process_input(PRELUDE_SRC, &mut heap, &mut global_env_map, true) {
-        eprintln!("Fatal Error loading prelude: {}", e);
-        std::process::exit(1);
-    }
 
     if let Some(path) = cli.file {
         // A file path was provided, so we run the script.
-        if let Err(e) = run_script(&path, &mut heap, &mut global_env_map) { 
+        if let Err(e) = run_script(&path, &mut heap, cli.use_tree_walker) { 
             // If an error occurs, print it to stderr and exit with a non-zero code.
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
     } else {
         // No file path was provided, so we launch the interactive REPL.
-        repl();
+        repl(cli.use_tree_walker);
     }
 }
 
 /// Runs the interpreter on a given script file.
-fn run_script(path: &Path, heap: &mut Heap, global_env_map: &mut HashMap<String, f64>) -> Result<(), String> {
+fn run_script(path: &Path, heap: &mut Heap, use_tree_walker: bool) -> Result<(), String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
 
     // The existing process_input function can be reused here.
-    let result = process_input(&content, heap, global_env_map, false)?;
+    let full_source = format!("{}\n{}", PRELUDE_SRC, content);
+    let result = if use_tree_walker {
+        // The tree walker needs a separate env map
+        let mut globals = HashMap::new();
+        process_input(&full_source, heap, &mut globals, true, true)
+    } else {
+        vm::interpret(&full_source, heap).map_err(|e| e.to_string())
+    }?;
 
     // Print the final result of the script.
     print_result(result, heap);
