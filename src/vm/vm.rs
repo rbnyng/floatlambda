@@ -43,6 +43,15 @@ pub struct VM<'a> {
     open_upvalues: Vec<u64>,
 }
 
+// Helper function for fuzzy equality
+pub fn fuzzy_eq(x: f64, y: f64) -> f64 {
+    let diff = (x - y).abs();
+    // Use max of absolute values of x and y, but at least 1.0 to avoid inflating the result
+    // for small numbers and to prevent division by zero.
+    let scale_factor = x.abs().max(y.abs()).max(1.0);
+    (-(diff / scale_factor)).exp()
+}
+
 /// The main entry point to run code. It handles parsing, compiling, and execution.
 pub fn interpret(source: &str, heap: &mut Heap) -> Result<f64, InterpretError> {
     let term = crate::parser::parse(source).map_err(|_| InterpretError::Compile(CompileError::ParseError))?;
@@ -181,6 +190,11 @@ impl<'a> VM<'a> {
                         _ => unreachable!(),
                     };
                     self.stack.push(if result { 1.0 } else { 0.0 });
+                }
+                OpCode::OpFuzzyEqual => {
+                    let b = self.pop_stack()?;
+                    let a = self.pop_stack()?;
+                    self.stack.push(fuzzy_eq(a, b));
                 }
                 OpCode::OpGetGlobal => {
                     let name_idx = self.read_byte() as usize;

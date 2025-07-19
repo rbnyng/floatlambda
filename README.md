@@ -79,7 +79,7 @@ Works for:
 The `==` operator is scale-invariant, meaning it compares numbers based on their relative difference.
 
 ```
-(== 1.0 1.1)                             # → ~0.909 (10% difference)
+(== 1.0 1.1)                             # → ~0.913 (9% difference)
 (== 1000.0 1001.0)                       # → ~0.999 (0.1% difference)
 (== 1.0 1.0)                             # → 1.0
 ```

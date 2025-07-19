@@ -69,6 +69,55 @@ mod vm_tests {
     }
 
     #[test]
+    fn test_vm_strict_equality_eq() {
+        // Numbers
+        test_source("(eq? 1.0 1.0)", 1.0);
+        test_source("(eq? 1.0 1.000000001)", 0.0);
+        test_source("(eq? 0.0 -0.0)", 0.0); // Strict bit-wise equality differs
+
+        // Pointers (should be equal only if they are the same object)
+        let source = "let mylist = (cons 1 2) in (eq? mylist mylist)";
+        test_source(source, 1.0);
+        
+        let source_neq = "let l1 = (cons 1 2) in let l2 = (cons 1 2) in (eq? l1 l2)";
+        test_source(source_neq, 0.0); // Different objects, not equal
+
+        // Nil
+        test_source("(eq? nil nil)", 1.0);
+        test_source("(eq? nil 0.0)", 0.0);
+    }
+
+    #[test]
+    fn test_vm_fuzzy_equality_double_equals() {
+        // Perfect match
+        test_calculus_source("(== 1.0 1.0)", 1.0);
+
+        // Close match (high similarity)
+        let source_close = "(== 1000.0 1001.0)";
+        let expected_close = (-(1.0f64 / 1001.0)).exp(); // ~0.999
+        test_calculus_source(source_close, expected_close);
+
+        // Further match (lower similarity)
+        let source_far = "(== 1.0 2.0)";
+        let expected_far = (-(1.0f64 / 2.0)).exp(); 
+        test_calculus_source(source_far, expected_far);
+        
+        // Small numbers
+        let source_small = "(== 0.1 0.2)";
+        let expected_small = (-(0.1f64 / 1.0)).exp();  // scale factor is 1.0, ~0.904
+        test_calculus_source(source_small, expected_small);
+    }
+
+    #[test]
+    fn test_vm_fuzzy_eq_on_pointers_is_nan() {
+        // Fuzzy equality on non-numbers (pointers, nil) should produce NaN
+        // because the formula involves arithmetic.
+        test_source("(== nil nil)", f64::NAN);
+        let source = "let mylist = (cons 1 2) in (== mylist mylist)";
+        test_source(source, f64::NAN);
+    }
+
+    #[test]
     fn test_vm_nested_conditionals() {
         test_source("if 1 then (if 0 then 1 else 2) else 3", 2.0);
         test_source("if 0 then 1 else (if 1 then 2 else 3)", 2.0);

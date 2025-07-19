@@ -183,7 +183,9 @@ impl Compiler {
             "+" => Some(OpCode::OpAdd), "-" => Some(OpCode::OpSubtract), 
             "*" => Some(OpCode::OpMultiply), "/" => Some(OpCode::OpDivide),
             "neg" => Some(OpCode::OpNegate), "not" => Some(OpCode::OpNot), 
-            "==" => Some(OpCode::OpEqual), "<" => Some(OpCode::OpLess), 
+            "eq?" => Some(OpCode::OpEqual),      // eq? uses strict equality
+            "==" => Some(OpCode::OpFuzzyEqual),  // == uses fuzzy equality
+            "<" => Some(OpCode::OpLess), 
             ">" => Some(OpCode::OpGreater),
             "cons" => Some(OpCode::OpCons), "car" => Some(OpCode::OpCar), "cdr" => Some(OpCode::OpCdr),
             _ => None,

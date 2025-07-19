@@ -39,7 +39,8 @@ pub enum OpCode {
     OpEqual,
     OpGreater,
     OpLess,
-
+    OpFuzzyEqual,
+    
     // --- Upvalue Opcodes ---
     OpGetUpvalue,
     OpSetUpvalue,
@@ -69,7 +70,7 @@ pub enum OpCode {
 
     // --- Native Interface ---
     OpNative,
-    
+
     // --- Control Flow ---
     /// Marks the end of a function's execution.
     OpReturn,
