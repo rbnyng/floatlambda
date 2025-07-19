@@ -384,10 +384,10 @@ mod tests {
         let initial_count = heap.alive_count();
         assert!(initial_count > 100); // It will be more than just the pairs.
 
-        heap.collect(&[list_val]);
+        heap.collect_full(&[list_val]);
         assert_eq!(heap.alive_count(), 100); // After GC, only the 100 pairs should remain.
 
-        heap.collect(&[]);
+        heap.collect_full(&[]);
         assert_eq!(heap.alive_count(), 0);
     }
 
@@ -402,7 +402,7 @@ mod tests {
 
         // 2. Run the GC with the list head as the root. This cleans up temporary objects
         // created during evaluation (like intermediate cons builtin closures).
-        heap.collect(&[list_val]);
+        heap.collect_full(&[list_val]);
         assert_eq!(heap.alive_count(), 3); // 3 pairs in the list.
 
         // 3. Create a new environment for the next step.
@@ -420,7 +420,7 @@ mod tests {
         assert!(count_before_final_gc >= 3); 
         
         // 5. Now, collect garbage, only keeping the tail rooted.
-        heap.collect(&[tail_val]);
+        heap.collect_full(&[tail_val]);
         
         // The head of the list (cons 1 ...) is no longer rooted and should be collected.
         // The tail (cons 2 (cons 3 nil)) consists of 2 pairs, which should remain.

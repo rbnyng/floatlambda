@@ -284,7 +284,7 @@ fn vm_repl() {
         // Root the VM's globals and the last result.
         let mut roots: Vec<f64> = vm.globals.values().copied().collect();
         roots.push(last_result);
-        vm.heap.collect(&roots);
+        vm.heap.start_gc_cycle(&roots);
 
         print!("> ");
         std::io::Write::flush(&mut std::io::stdout()).unwrap();
@@ -355,7 +355,7 @@ fn tree_walker_repl() {
         // --- GC ---
         let mut roots: Vec<f64> = global_env_map.values().copied().collect();
         roots.push(last_result);
-        heap.collect(&roots);
+        heap.start_gc_cycle(&roots); 
 
         print!("> ");
         std::io::Write::flush(&mut std::io::stdout()).unwrap();
