@@ -166,18 +166,21 @@ impl Compiler {
     }
 
     fn compile_if(&mut self, cond: &Term, then_b: &Term, else_b: &Term, heap: &mut Heap, is_tail: bool) -> Result<(), CompileError> {
+        // 1. Compile the condition. Stack: [cond]
         self.compile_term(cond, heap, false)?;
-        let else_jump = self.emit_jump(OpCode::OpJumpIfFalse);
-        self.emit_opcode(OpCode::OpPop);
+        
+        // 2. Compile the 'then' branch expression. Stack: [cond, then_result]
         self.compile_term(then_b, heap, is_tail)?;
-        let end_jump = self.emit_jump(OpCode::OpJump);
-        self.patch_jump(else_jump)?;
-        self.emit_opcode(OpCode::OpPop);
+    
+        // 3. Compile the 'else' branch expression. Stack: [cond, then_result, else_result]
         self.compile_term(else_b, heap, is_tail)?;
-        self.patch_jump(end_jump)?;
+        
+        // 4. Call OpBlend. It will consume the top 3 values and push one result.
+        self.emit_opcode(OpCode::OpBlend);
+        
         Ok(())
     }
-
+        
     fn compile_builtin(&mut self, op: &str, arg_count: usize) -> Result<(), CompileError> {
         let maybe_opcode = match op {
             "+" => Some(OpCode::OpAdd), "-" => Some(OpCode::OpSubtract), 

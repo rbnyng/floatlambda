@@ -196,6 +196,34 @@ impl<'a> VM<'a> {
                     let a = self.pop_stack()?;
                     self.stack.push(fuzzy_eq(a, b));
                 }
+                OpCode::OpBlend => {
+                    // Stack (top down): else_result, then_result, condition
+                    let else_val = self.pop_stack()?;
+                    let then_val = self.pop_stack()?;
+                    let cond_val = self.pop_stack()?;
+
+                    // If either branch result is not a finite number (i.e., it's a pointer or nil),
+                    // we cannot blend arithmetically. We must perform a discrete choice.
+                    if !then_val.is_finite() || !else_val.is_finite() {
+                        // A weight of 0.5 or greater favors the 'then' branch.
+                        // We also treat nil as strictly false.
+                        if cond_val >= 0.5 && cond_val != NIL_VALUE {
+                            self.stack.push(then_val);
+                        } else {
+                            self.stack.push(else_val);
+                        }
+                    } else {
+                        // Both are plain numbers, so we can blend them.
+                        let weight = if cond_val == NIL_VALUE {
+                            0.0
+                        } else {
+                            cond_val.max(0.0).min(1.0)
+                        };
+                        
+                        let result = weight * then_val + (1.0 - weight) * else_val;
+                        self.stack.push(result);
+                    }
+                }
                 OpCode::OpGetGlobal => {
                     let name_idx = self.read_byte() as usize;
                     let func = match self.heap.get(func_id).unwrap() {

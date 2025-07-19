@@ -40,7 +40,7 @@ pub enum OpCode {
     OpGreater,
     OpLess,
     OpFuzzyEqual,
-    
+
     // --- Upvalue Opcodes ---
     OpGetUpvalue,
     OpSetUpvalue,
@@ -67,6 +67,9 @@ pub enum OpCode {
     OpJump,
     /// Jumps forward by a 16-bit offset if the top of the stack is falsey (0.0 or nil).
     OpJumpIfFalse,
+    
+    // --- Fuzzy Logic Opcode ---
+    OpBlend,
 
     // --- Native Interface ---
     OpNative,
