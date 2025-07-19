@@ -6,12 +6,13 @@ use crate::vm::chunk::Chunk;
 use crate::vm::function::Function;
 use crate::vm::natives;
 use crate::vm::opcode::OpCode;
+use crate::ParseError;
 
 #[derive(Debug)]
 pub enum CompileError {
     UnsupportedExpression(String),
     TooManyConstants,
-    ParseError,
+    Parse(ParseError),
 }
 
 impl std::fmt::Display for CompileError {
@@ -19,7 +20,7 @@ impl std::fmt::Display for CompileError {
         match self {
             CompileError::UnsupportedExpression(msg) => write!(f, "Unsupported expression: {}", msg),
             CompileError::TooManyConstants => write!(f, "Too many constants in chunk."),
-            CompileError::ParseError => write!(f, "Parse error during compilation."),
+            CompileError::Parse(e) => write!(f, "{}", e), 
         }
     }
 }
@@ -274,6 +275,18 @@ impl Compiler {
             "neg" => Some(OpCode::OpNegate), "not" => Some(OpCode::OpNot), 
             "eq?" => Some(OpCode::OpEqual),      // eq? uses strict equality
             "==" => Some(OpCode::OpFuzzyEqual),  // == uses fuzzy equality
+            ">=" => {
+                self.emit_opcode(OpCode::OpLess);
+                self.emit_opcode(OpCode::OpNot);
+                return Ok(());
+            }
+            "<=" => {
+                self.emit_opcode(OpCode::OpGreater);
+                self.emit_opcode(OpCode::OpNot);
+                return Ok(());
+            }
+            "div" => Some(OpCode::OpDivInt),
+            "rem" => Some(OpCode::OpRem),
             "<" => Some(OpCode::OpLess), 
             ">" => Some(OpCode::OpGreater),
             "cons" => Some(OpCode::OpCons), "car" => Some(OpCode::OpCar), "cdr" => Some(OpCode::OpCdr),
@@ -285,17 +298,17 @@ impl Compiler {
             return Ok(());
         }
 
-        // Check for interpreter-only builtins
-        let interpreter_only_builtins = [
-            // ML
-            "tensor", "add_t", "matmul", "sigmoid_t", "reshape", "transpose",
-            "sum_t", "mean_t", "get_data", "get_shape", "get_grad", "grad"
-        ];
-        if interpreter_only_builtins.contains(&op) {
-            return Err(CompileError::UnsupportedExpression(format!(
-                "'{}' is not yet supported in the high-performance VM. Try the tree-walking interpreter.", op
-            )));
-        }
+        // // Check for interpreter-only builtins
+        // let interpreter_only_builtins = [
+        //     // ML
+        //     "tensor", "add_t", "matmul", "sigmoid_t", "reshape", "transpose",
+        //     "sum_t", "mean_t", "get_data", "get_shape", "get_grad", "grad"
+        // ];
+        // if interpreter_only_builtins.contains(&op) {
+        //     return Err(CompileError::UnsupportedExpression(format!(
+        //         "'{}' is not yet supported in the high-performance VM. Try the tree-walking interpreter.", op
+        //     )));
+        // }
 
         if let Some((index, arity)) = natives::NATIVE_MAP.get(op) {
             if arg_count != *arity {

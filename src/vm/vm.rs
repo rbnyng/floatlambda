@@ -73,8 +73,7 @@ impl<'a> VM<'a> {
     /// Compiles a source string and loads the resulting function into the heap.
     /// Returns the heap ID of the compiled closure.
     pub fn compile_and_load(&mut self, source: &str) -> Result<u64, InterpretError> {
-        let term = crate::parser::parse(source)
-            .map_err(|_| InterpretError::Compile(CompileError::ParseError))?;
+        let term = crate::parser::parse(source).map_err(|e| InterpretError::Compile(CompileError::Parse(e)))?;
 
         // The compiler is now part of the VM's process
         let mut main_func = compiler::compile(&term, self.heap).map_err(InterpretError::Compile)?;
@@ -186,6 +185,15 @@ impl<'a> VM<'a> {
                         OpCode::OpSubtract => self.stack.push(a - b),
                         OpCode::OpMultiply => self.stack.push(a * b),
                         OpCode::OpDivide => self.stack.push(if b == 0.0 { f64::INFINITY } else { a / b }),
+                        _ => unreachable!(),
+                    }
+                }
+                OpCode::OpDivInt | OpCode::OpRem => {
+                    let b = self.pop_stack()?;
+                    let a = self.pop_stack()?;
+                    match op {
+                        OpCode::OpDivInt => self.stack.push((a / b).floor()),
+                        OpCode::OpRem => self.stack.push(a % b),
                         _ => unreachable!(),
                     }
                 }

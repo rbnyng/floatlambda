@@ -121,13 +121,13 @@ let QUOTE = 34.0 in
 let BACKSLASH = 92.0 in
 
 # String length (reuse list length)
-let string_length = length in
+let string_length = (λs. (length s)) in
 
 # String concatenation (reuse list append)
 let string_concat = append in
 
 # Character at index
-let string_get = list_get in
+let string_get = (λs. λi. (list_get s i)) in
 
 # Substring extraction
 let substring = (λstr. λstart. λlen.
@@ -373,7 +373,7 @@ let rec set_difference = (λset1. λset2.
 ) in
 
 # Set size
-let set_size = length in
+let set_size = (λs. (length s)) in
 
 # Convert list to set (removes duplicates, sorts)
 let rec list_to_set = (λlst.

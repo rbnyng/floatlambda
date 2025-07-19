@@ -8,7 +8,7 @@ use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject};
 use crate::error::EvalError;
 
 /// Performs a topological sort of the computation graph starting from a root node.
-fn build_topo_order(root_id: u64, heap: &Heap) -> Vec<u64> {
+pub fn build_topo_order(root_id: u64, heap: &Heap) -> Vec<u64> {
     let mut order = Vec::new();
     let mut visited = HashSet::new();
 

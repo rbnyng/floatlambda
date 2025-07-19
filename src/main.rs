@@ -396,13 +396,22 @@ fn run_script(path: &Path, heap: &mut Heap, use_tree_walker: bool) -> Result<(),
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
 
-    let full_source = format!("{}\n{}", PRELUDE_SRC, content);
     let result = if use_tree_walker {
         // The tree walker needs a separate env map
         let mut globals = HashMap::new();
-        process_input(&full_source, heap, &mut globals, true, true)
+        // 1. Process prelude to populate globals
+        process_input(PRELUDE_SRC, heap, &mut globals, true, true)?;
+        // 2. Process the user script with the populated globals
+        process_input(&content, heap, &mut globals, false, true)
     } else {
-        vm::interpret(&full_source, heap).map_err(|e| e.to_string())
+        let mut vm = vm::vm::VM::new(heap);
+        // 1. Compile and run prelude to populate globals
+        let prelude_id = vm.compile_and_load(PRELUDE_SRC).map_err(|e| e.to_string())?;
+        vm.prime_and_run(prelude_id).map_err(|e| e.to_string())?;
+        vm.stack.clear(); // Clear any result from prelude
+        // 2. Compile and run user script
+        let script_id = vm.compile_and_load(&content).map_err(|e| e.to_string())?;
+        vm.prime_and_run(script_id).map_err(|e| e.to_string())
     }?;
 
     // Print the final result of the script.

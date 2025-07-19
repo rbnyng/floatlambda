@@ -33,7 +33,9 @@ pub enum OpCode {
     OpSubtract,
     OpMultiply,
     OpDivide,
-
+    OpDivInt, // For integer-like division (floor)
+    OpRem,    // For remainder
+    
     // --- Comparison ---
     /// Strict equality (eq?). Pops two values, pushes 1.0 if equal, 0.0 otherwise.
     OpEqual,

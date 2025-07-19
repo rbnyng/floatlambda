@@ -8,6 +8,8 @@ pub mod vm;
 pub mod function; 
 pub mod closure; 
 pub mod natives; 
+pub mod ml_natives;
+pub mod hof_natives;
 
 // Re-export the key structures and functions.
 pub use chunk::Chunk;
