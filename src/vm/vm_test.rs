@@ -5,9 +5,15 @@ mod vm_tests {
     // Helper to test for a successful run
     fn test_source(source: &str, expected: f64) {
         let mut heap = Heap::new();
-        // The main `interpret` function now orchestrates everything.
         let result = vm::interpret(source, &mut heap).unwrap();
-        assert!((result - expected).abs() < 1e-9); // Use tolerance for float comparison
+    
+        // Check for NaN as a special case
+        if expected.is_nan() {
+            assert!(result.is_nan(), "Expected NaN, but got {}", result);
+        } else {
+            // Use the comparison for all other numbers
+            assert!((result - expected).abs() < 1e-9, "Expected {}, got {}", expected, result);
+        }
     }
 
     // Helper to test for a runtime error

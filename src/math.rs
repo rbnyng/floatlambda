@@ -14,8 +14,10 @@ pub const SQRT_2: f64 = std::f64::consts::SQRT_2;
 pub const LN_2: f64 = std::f64::consts::LN_2;
 pub const LN_10: f64 = std::f64::consts::LN_10;
 
+// --- Private Helpers ---
+
 // Helper for gamma function (Lanczos approximation)
-pub fn gamma_lanczos(z: f64) -> f64 {
+fn gamma_lanczos(z: f64) -> f64 {
     if z < 0.5 {
         // Use reflection formula: Γ(z)Γ(1-z) = π/sin(πz)
         PI / (PI * z).sin() / gamma_lanczos(1.0 - z)
@@ -46,7 +48,7 @@ pub fn gamma_lanczos(z: f64) -> f64 {
 }
 
 // Error function approximation (Abramowitz and Stegun)
-pub fn erf_approx(x: f64) -> f64 {
+fn erf_approx(x: f64) -> f64 {
     if x == 0.0 { return 0.0; }
     
     let sign = if x > 0.0 { 1.0 } else { -1.0 };
@@ -66,129 +68,114 @@ pub fn erf_approx(x: f64) -> f64 {
     sign * y
 }
 
+// --- Public, Pure Functions ---
+
+// Nullary
+pub fn fl_random() -> f64 { rand::thread_rng().gen::<f64>() }
+pub fn fl_random_range(min: f64, max: f64) -> f64 { rand::thread_rng().gen_range(min..max) }
+pub fn fl_random_normal(mean: f64, std_dev: f64) -> f64 {
+    let mut rng = rand::thread_rng();
+    let u1: f64 = rng.gen();
+    let u2: f64 = rng.gen();
+    let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos();
+    mean + std_dev * z0
+}
+
+// Unary
+pub fn fl_sin(x: f64) -> f64 { x.sin() }
+pub fn fl_cos(x: f64) -> f64 { x.cos() }
+pub fn fl_tan(x: f64) -> f64 { x.tan() }
+pub fn fl_exp(x: f64) -> f64 { x.exp() }
+pub fn fl_log(x: f64) -> f64 { if x <= 0.0 { f64::NAN } else { x.ln() } }
+pub fn fl_asin(x: f64) -> f64 { if x < -1.0 || x > 1.0 { f64::NAN } else { x.asin() } }
+pub fn fl_acos(x: f64) -> f64 { if x < -1.0 || x > 1.0 { f64::NAN } else { x.acos() } }
+pub fn fl_atan(x: f64) -> f64 { x.atan() }
+pub fn fl_sinh(x: f64) -> f64 { x.sinh() }
+pub fn fl_cosh(x: f64) -> f64 { x.cosh() }
+pub fn fl_tanh(x: f64) -> f64 { x.tanh() }
+pub fn fl_asinh(x: f64) -> f64 { x.asinh() }
+pub fn fl_acosh(x: f64) -> f64 { if x < 1.0 { f64::NAN } else { x.acosh() } }
+pub fn fl_atanh(x: f64) -> f64 { if x <= -1.0 || x >= 1.0 { f64::NAN } else { x.atanh() } }
+pub fn fl_sqrt(x: f64) -> f64 { if x < 0.0 { f64::NAN } else { x.sqrt() } }
+pub fn fl_cbrt(x: f64) -> f64 { x.cbrt() }
+pub fn fl_exp2(x: f64) -> f64 { x.exp2() }
+pub fn fl_log2(x: f64) -> f64 { if x <= 0.0 { f64::NAN } else { x.log2() } }
+pub fn fl_log10(x: f64) -> f64 { if x <= 0.0 { f64::NAN } else { x.log10() } }
+pub fn fl_floor(x: f64) -> f64 { x.floor() }
+pub fn fl_ceil(x: f64) -> f64 { x.ceil() }
+pub fn fl_round(x: f64) -> f64 { x.round() }
+pub fn fl_trunc(x: f64) -> f64 { x.trunc() }
+pub fn fl_fract(x: f64) -> f64 { x.fract() }
+pub fn fl_signum(x: f64) -> f64 { x.signum() }
+pub fn fl_gamma(x: f64) -> f64 { if x <= 0.0 && x.fract() == 0.0 { f64::NAN } else { gamma_lanczos(x) } }
+pub fn fl_lgamma(x: f64) -> f64 { if x <= 0.0 && x.fract() == 0.0 { f64::NAN } else { gamma_lanczos(x).ln() } }
+pub fn fl_erf(x: f64) -> f64 { erf_approx(x) }
+pub fn fl_erfc(x: f64) -> f64 { 1.0 - erf_approx(x) }
+pub fn fl_degrees(x: f64) -> f64 { x * 180.0 / PI }
+pub fn fl_radians(x: f64) -> f64 { x * PI / 180.0 }
+pub fn fl_is_nan(x: f64) -> f64 { if x.is_nan() { 1.0 } else { 0.0 } }
+pub fn fl_is_infinite(x: f64) -> f64 { if x.is_infinite() { 1.0 } else { 0.0 } }
+pub fn fl_is_finite(x: f64) -> f64 { if x.is_finite() { 1.0 } else { 0.0 } }
+pub fn fl_is_normal(x: f64) -> f64 { if x.is_normal() { 1.0 } else { 0.0 } }
+
+// Binary
+pub fn fl_pow(x: f64, y: f64) -> f64 { x.powf(y) }
+pub fn fl_atan2(y: f64, x: f64) -> f64 { y.atan2(x) }
+pub fn fl_hypot(x: f64, y: f64) -> f64 { x.hypot(y) }
+pub fn fl_copysign(x: f64, y: f64) -> f64 { x.copysign(y) }
+
+
+// --- Public API for the interpreter ---
+
 pub fn execute_math_builtin(op: &str, args: &[f64]) -> Result<f64, EvalError> {
     match op {
         // Basic transcendental functions
-        "sin" => Ok(args[0].sin()),
-        "cos" => Ok(args[0].cos()),
-        "tan" => Ok(args[0].tan()),
-        "exp" => Ok(args[0].exp()),
-        "log" => {
-            if args[0] <= 0.0 {
-                Ok(f64::NAN)
-            } else {
-                Ok(args[0].ln())
-            }
-        }
+        "sin" => Ok(fl_sin(args[0])),
+        "cos" => Ok(fl_cos(args[0])),
+        "tan" => Ok(fl_tan(args[0])),
+        "exp" => Ok(fl_exp(args[0])),
+        "log" => Ok(fl_log(args[0])),
         
         // Inverse trig functions
-        "asin" => {
-            if args[0] < -1.0 || args[0] > 1.0 {
-                Ok(f64::NAN)
-            } else {
-                Ok(args[0].asin())
-            }
-        }
-        "acos" => {
-            if args[0] < -1.0 || args[0] > 1.0 {
-                Ok(f64::NAN)
-            } else {
-                Ok(args[0].acos())
-            }
-        }
-        "atan" => Ok(args[0].atan()),
-        "atan2" => Ok(args[0].atan2(args[1])), // atan2(y, x)
+        "asin" => Ok(fl_asin(args[0])),
+        "acos" => Ok(fl_acos(args[0])),
+        "atan" => Ok(fl_atan(args[0])),
+        "atan2" => Ok(fl_atan2(args[0], args[1])),
         
         // Hyperbolic functions
-        "sinh" => Ok(args[0].sinh()),
-        "cosh" => Ok(args[0].cosh()),
-        "tanh" => Ok(args[0].tanh()),
-        "asinh" => Ok(args[0].asinh()),
-        "acosh" => {
-            if args[0] < 1.0 {
-                Ok(f64::NAN)
-            } else {
-                Ok(args[0].acosh())
-            }
-        }
-        "atanh" => {
-            if args[0] <= -1.0 || args[0] >= 1.0 {
-                Ok(f64::NAN)
-            } else {
-                Ok(args[0].atanh())
-            }
-        }
+        "sinh" => Ok(fl_sinh(args[0])),
+        "cosh" => Ok(fl_cosh(args[0])),
+        "tanh" => Ok(fl_tanh(args[0])),
+        "asinh" => Ok(fl_asinh(args[0])),
+        "acosh" => Ok(fl_acosh(args[0])),
+        "atanh" => Ok(fl_atanh(args[0])),
         
         // Power and root functions
-        "pow" => Ok(args[0].powf(args[1])),
-        "sqrt" => {
-            if args[0] < 0.0 {
-                Ok(f64::NAN)
-            } else {
-                Ok(args[0].sqrt())
-            }
-        }
-        "cbrt" => Ok(args[0].cbrt()), // Cube root
-        "exp2" => Ok(args[0].exp2()), // 2^x
-        "log2" => {
-            if args[0] <= 0.0 {
-                Ok(f64::NAN)
-            } else {
-                Ok(args[0].log2())
-            }
-        }
-        "log10" => {
-            if args[0] <= 0.0 {
-                Ok(f64::NAN)
-            } else {
-                Ok(args[0].log10())
-            }
-        }
+        "pow" => Ok(fl_pow(args[0], args[1])),
+        "sqrt" => Ok(fl_sqrt(args[0])),
+        "cbrt" => Ok(fl_cbrt(args[0])),
+        "exp2" => Ok(fl_exp2(args[0])),
+        "log2" => Ok(fl_log2(args[0])),
+        "log10" => Ok(fl_log10(args[0])),
         
         // Rounding and utility functions
-        "floor" => Ok(args[0].floor()),
-        "ceil" => Ok(args[0].ceil()),
-        "round" => Ok(args[0].round()),
-        "trunc" => Ok(args[0].trunc()),
-        "fract" => Ok(args[0].fract()),
-        "signum" => Ok(args[0].signum()),
+        "floor" => Ok(fl_floor(args[0])),
+        "ceil" => Ok(fl_ceil(args[0])),
+        "round" => Ok(fl_round(args[0])),
+        "trunc" => Ok(fl_trunc(args[0])),
+        "fract" => Ok(fl_fract(args[0])),
+        "signum" => Ok(fl_signum(args[0])),
         
         // Special functions
-        "gamma" => {
-            if args[0] <= 0.0 && args[0].fract() == 0.0 {
-                // Gamma is undefined for non-positive integers
-                Ok(f64::NAN)
-            } else {
-                Ok(gamma_lanczos(args[0]))
-            }
-        }
-        "lgamma" => {
-            if args[0] <= 0.0 && args[0].fract() == 0.0 {
-                Ok(f64::NAN)
-            } else {
-                Ok(gamma_lanczos(args[0]).ln())
-            }
-        }
-        "erf" => Ok(erf_approx(args[0])),
-        "erfc" => Ok(1.0 - erf_approx(args[0])),
+        "gamma" => Ok(fl_gamma(args[0])),
+        "lgamma" => Ok(fl_lgamma(args[0])),
+        "erf" => Ok(fl_erf(args[0])),
+        "erfc" => Ok(fl_erfc(args[0])),
         
         // Random number generation
-        "random" => {
-            let mut rng = rand::thread_rng();
-            Ok(rng.gen::<f64>()) // Random float in [0, 1)
-        }
-        "random_range" => {
-            let mut rng = rand::thread_rng();
-            Ok(rng.gen_range(args[0]..args[1]))
-        }
-        "random_normal" => {
-            // Box-Muller transform for normal distribution
-            let mut rng = rand::thread_rng();
-            let u1: f64 = rng.gen();
-            let u2: f64 = rng.gen();
-            let z0 = (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos();
-            Ok(args[0] + args[1] * z0) // mean + std * z0
-        }
+        "random" => Ok(fl_random()),
+        "random_range" => Ok(fl_random_range(args[0], args[1])),
+        "random_normal" => Ok(fl_random_normal(args[0], args[1])),
         
         // Mathematical constants
         "pi" => Ok(PI),
@@ -199,16 +186,16 @@ pub fn execute_math_builtin(op: &str, args: &[f64]) -> Result<f64, EvalError> {
         "ln10" => Ok(LN_10),
         
         // Additional utility functions
-        "degrees" => Ok(args[0] * 180.0 / PI), // Radians to degrees
-        "radians" => Ok(args[0] * PI / 180.0), // Degrees to radians
-        "hypot" => Ok(args[0].hypot(args[1])), // sqrt(x² + y²)
-        "copysign" => Ok(args[0].abs() * args[1].signum()),
+        "degrees" => Ok(fl_degrees(args[0])),
+        "radians" => Ok(fl_radians(args[0])),
+        "hypot" => Ok(fl_hypot(args[0], args[1])),
+        "copysign" => Ok(fl_copysign(args[0], args[1])),
         
         // Floating point utilities
-        "is_nan" => Ok(if args[0].is_nan() { 1.0 } else { 0.0 }),
-        "is_infinite" => Ok(if args[0].is_infinite() { 1.0 } else { 0.0 }),
-        "is_finite" => Ok(if args[0].is_finite() { 1.0 } else { 0.0 }),
-        "is_normal" => Ok(if args[0].is_normal() { 1.0 } else { 0.0 }),
+        "is_nan" => Ok(fl_is_nan(args[0])),
+        "is_infinite" => Ok(fl_is_infinite(args[0])),
+        "is_finite" => Ok(fl_is_finite(args[0])),
+        "is_normal" => Ok(fl_is_normal(args[0])),
         
         _ => Err(EvalError::TypeError(format!("Unknown math builtin: {}", op))),
     }
@@ -229,10 +216,9 @@ pub fn get_math_builtin_arity(op: &str) -> Option<usize> {
         "is_nan" | "is_infinite" | "is_finite" | "is_normal" => Some(1),
         
         // Binary functions  
-        "pow" | "atan2" | "random_range" | "hypot" | "copysign" => Some(2),
-        
-        // Ternary functions
-        "random_normal" => Some(2), // mean, std
+        "pow" | "atan2" | "random_range" | "hypot" | "copysign" |
+        "random_normal"
+        => Some(2),
         
         _ => None,
     }

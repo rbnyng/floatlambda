@@ -14,6 +14,16 @@ pub enum CompileError {
     ParseError,
 }
 
+impl std::fmt::Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompileError::UnsupportedExpression(msg) => write!(f, "Unsupported expression: {}", msg),
+            CompileError::TooManyConstants => write!(f, "Too many constants in chunk."),
+            CompileError::ParseError => write!(f, "Parse error during compilation."),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Local {
     name: String,

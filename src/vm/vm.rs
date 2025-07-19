@@ -14,6 +14,15 @@ pub enum InterpretError {
     Runtime(String),
 }
 
+impl std::fmt::Display for InterpretError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InterpretError::Compile(e) => write!(f, "Compilation Error: {}", e),
+            InterpretError::Runtime(msg) => write!(f, "Runtime Error: {}", msg),
+        }
+    }
+}
+
 /// Represents a single ongoing function call.
 #[derive(Debug)]
 struct CallFrame {
@@ -54,7 +63,7 @@ pub fn interpret(source: &str, heap: &mut Heap) -> Result<f64, InterpretError> {
 }
 
 impl<'a> VM<'a> {
-    fn new(heap: &'a mut Heap) -> Self {
+    pub fn new(heap: &'a mut Heap) -> Self {
         VM {
             heap,
             frames: Vec::with_capacity(64),
