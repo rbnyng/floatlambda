@@ -117,13 +117,23 @@ pub fn fl_is_nan(x: f64) -> f64 { if x.is_nan() { 1.0 } else { 0.0 } }
 pub fn fl_is_infinite(x: f64) -> f64 { if x.is_infinite() { 1.0 } else { 0.0 } }
 pub fn fl_is_finite(x: f64) -> f64 { if x.is_finite() { 1.0 } else { 0.0 } }
 pub fn fl_is_normal(x: f64) -> f64 { if x.is_normal() { 1.0 } else { 0.0 } }
+// Unary Fuzzy Logic
+pub fn fl_fuzzy_not(x: f64) -> f64 {
+    1.0 - x.max(0.0).min(1.0)
+}
 
 // Binary
 pub fn fl_pow(x: f64, y: f64) -> f64 { x.powf(y) }
 pub fn fl_atan2(y: f64, x: f64) -> f64 { y.atan2(x) }
 pub fn fl_hypot(x: f64, y: f64) -> f64 { x.hypot(y) }
 pub fn fl_copysign(x: f64, y: f64) -> f64 { x.copysign(y) }
+pub fn fl_fuzzy_and(a: f64, b: f64) -> f64 {
+    a * b
+}
 
+pub fn fl_fuzzy_or(a: f64, b: f64) -> f64 {
+    a + b - (a * b)
+}
 
 // --- Public API for the interpreter ---
 

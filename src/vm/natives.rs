@@ -155,6 +155,7 @@ const CORE_NATIVES: &[NativeDef] = &[
     NativeDef { name: "acosh", arity: 1, func: pure_unary_fn!(math::fl_acosh) },
     NativeDef { name: "atanh", arity: 1, func: pure_unary_fn!(math::fl_atanh) },
     NativeDef { name: "sqrt", arity: 1, func: pure_unary_fn!(math::fl_sqrt) },
+    NativeDef { name: "fuzzy_not", arity: 1, func: pure_unary_fn!(math::fl_fuzzy_not) },
     NativeDef { name: "cbrt", arity: 1, func: pure_unary_fn!(math::fl_cbrt) },
     NativeDef { name: "exp2", arity: 1, func: pure_unary_fn!(math::fl_exp2) },
     NativeDef { name: "log2", arity: 1, func: pure_unary_fn!(math::fl_log2) },
@@ -185,6 +186,8 @@ const CORE_NATIVES: &[NativeDef] = &[
     NativeDef { name: "copysign", arity: 2, func: pure_binary_fn!(math::fl_copysign) },
     NativeDef { name: "min", arity: 2, func: pure_binary_fn!(f64::min) },
     NativeDef { name: "max", arity: 2, func: pure_binary_fn!(f64::max) },
+    NativeDef { name: "fuzzy_and", arity: 2, func: pure_binary_fn!(math::fl_fuzzy_and) },
+    NativeDef { name: "fuzzy_or", arity: 2, func: pure_binary_fn!(math::fl_fuzzy_or) },
 ];
 
 lazy_static! {
