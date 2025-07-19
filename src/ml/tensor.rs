@@ -6,8 +6,8 @@ use std::rc::Rc;
 
 use crate::memory::Heap;
 
-/// The context for backpropagation. It stores the tensors that were inputs
-/// to the operation and a function that can compute the backward pass.
+// The context for backpropagation. It stores the tensors that were inputs
+// to the operation and a function that can compute the backward pass.
 pub struct Context {
     pub parents: Vec<u64>,
     pub backward_fn: Box<dyn Fn(&[f64], &mut Heap)>,
@@ -22,7 +22,7 @@ impl fmt::Debug for Context {
     }
 }
 
-/// The core Tensor object for the ML library. It supports automatic differentiation.
+// The core Tensor object for the ML library. It supports automatic differentiation.
 #[derive(Debug, Clone)]
 pub struct DifferentiableTensor {
     pub shape: Vec<usize>,
@@ -40,7 +40,7 @@ impl Clone for Context {
 }
 
 impl DifferentiableTensor {
-    /// Creates a new tensor.
+    // Creates a new tensor.
     pub fn new(shape: Vec<usize>, data: Vec<f64>) -> Self {
         let grad_data = vec![0.0; data.len()];
         DifferentiableTensor {

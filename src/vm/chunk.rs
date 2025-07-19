@@ -2,20 +2,20 @@
 
 use crate::vm::opcode::OpCode;
 
-/// A chunk of bytecode representing a compiled script or function.
+// A chunk of bytecode representing a compiled script or function.
 #[derive(Debug, Default, Clone)]
 pub struct Chunk {
-    /// The sequence of bytecode instructions.
+    // The sequence of bytecode instructions.
     pub code: Vec<u8>,
-    /// The pool of constant values (f64 literals) used by the code.
+    // The pool of constant values (f64 literals) used by the code.
     pub constants: Vec<f64>,
-    /// A parallel array to code, mapping each byte to a source line number.
+    // A parallel array to code, mapping each byte to a source line number.
     pub lines: Vec<usize>,
     pub names: Vec<String>, 
 }
 
 impl Chunk {
-    /// Creates a new, empty chunk.
+    // Creates a new, empty chunk.
     pub fn new() -> Self {
         Self::default()
     }
@@ -26,24 +26,22 @@ impl Chunk {
         self.names.len() - 1
     }
     
-    /// Appends a byte to the chunk, which can be an OpCode or an operand.
-    /// Associates the byte with a given source line number for error reporting.
+    // Appends a byte to the chunk, which can be an OpCode or an operand.
+    // Associates the byte with a given source line number for error reporting.
     pub fn write(&mut self, byte: u8, line: usize) {
         self.code.push(byte);
         self.lines.push(line);
     }
 
-    /// A convenience method to write an OpCode.
+    // A convenience method to write an OpCode.
     pub fn write_opcode(&mut self, op: OpCode, line: usize) {
         self.write(op as u8, line);
     }
 
-    /// Adds a constant value to the chunk's constant pool.
-    /// Returns the index of that constant in the pool.
-    /// The index will be used as the operand for OpConstant.
+    // Adds a constant value to the chunk's constant pool.
+    // Returns the index of that constant in the pool.
+    // The index is used as the operand for OpConstant.
     pub fn add_constant(&mut self, value: f64) -> usize {
-        // To avoid storing duplicates, we could search for the constant first.
-        // For simplicity in this first phase, we'll just add it.
         self.constants.push(value);
         self.constants.len() - 1
     }

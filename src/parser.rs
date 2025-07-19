@@ -143,7 +143,7 @@ impl Parser {
         self.consume_keyword("let")?;
         self.skip_whitespace();
 
-        // Check for the 'rec' keyword.
+        // Check for the rec keyword.
         let is_rec = if self.peek_exact_word() == "rec" {
             self.consume_keyword("rec")?;
             true
@@ -205,6 +205,7 @@ impl Parser {
         for term in terms {
             app = Term::App(Box::new(app), Box::new(term));
         }
+        // Sugar for partial applications in the case of the vm
         if let Term::App(func, arg) = &app {
             if let Term::Builtin(op) = &**func {
                 if let Ok(arity) = crate::interpreter::evaluator::get_builtin_arity(op) {

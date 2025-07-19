@@ -69,7 +69,7 @@ fn is_blendable(term: &Term) -> bool {
                 return is_blendable(a);  // Only check the argument
             }
 
-            // A call to 'cons' produces a pointer, so it's not blendable.
+            // A call to cons produces a pointer, so it's not blendable.
             if let Term::Builtin(op) = &**f {
                 if op == "cons" { return false; }
             }
@@ -78,10 +78,10 @@ fn is_blendable(term: &Term) -> bool {
             is_blendable(f) && is_blendable(a)
         }
 
-        // A 'let' is blendable if its body is.
+        // A let is blendable if its body is.
         Term::Let(_, _, body) => is_blendable(body),
 
-        // An 'if' is blendable if all its parts are.
+        // An if is blendable if all its parts are.
         Term::If(cond, t, e) => is_blendable(cond) && is_blendable(t) && is_blendable(e),
 
         // These constructs produce pointers or nil, so they are not blendable.
@@ -193,9 +193,9 @@ impl Compiler {
             let name_idx = self.add_name_constant(name.to_string());
             self.emit_opcode(OpCode::OpDefineGlobal);
             self.emit_byte(name_idx as u8);
-            // The body is compiled *without* creating a new scope, so the global persists.
+            // The body is compiled without creating a new scope, so the global persists.
             self.compile_term(body, heap, is_tail)?;
-            // We pop the value from the stack after the body has used it, unless it was the last expression.
+            // pop the value from the stack after the body has used it, unless it was the last expression.
             if !is_tail {
                 self.emit_opcode(OpCode::OpPop);
             }

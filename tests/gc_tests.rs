@@ -6,7 +6,7 @@ use float_lambda::vm::function::Function;
 use float_lambda::vm::vm::{CallFrame, VM};
 use float_lambda::{self as fl};
 
-/// Helper to create a simple UserFunc (AST-based closure) for testing.
+// Helper to create a simple UserFunc (AST-based closure) for testing.
 // This function needs a mutable VM reference to register the object on its heap.
 fn create_dummy_ast_closure(vm: &mut VM) -> u64 {
     let closure = fl::memory::ASTClosure {
@@ -17,7 +17,7 @@ fn create_dummy_ast_closure(vm: &mut VM) -> u64 {
     vm.heap.register(HeapObject::UserFunc(closure))
 }
 
-/// Helper to create a simple VM Function and Closure for testing.
+// Helper to create a simple VM Function and Closure for testing.
 // This function also needs a mutable VM reference.
 fn create_dummy_vm_closure(vm: &mut VM) -> u64 {
     let func = Function {
@@ -233,9 +233,9 @@ mod gc_vm_integration_tests {
         )); // Access heap through vm.heap
     }
 
-    /// It simulates a long-running script (prelude) that can trigger the GC,
-    /// followed by another script that uses the results of the first.
-    /// This requires the REPL's GC rooting strategy to be correct.
+    // It simulates a long-running script (prelude) that can trigger the GC,
+    // followed by another script that uses the results of the first.
+    // This requires the REPL's GC rooting strategy to be correct.
     #[test]
     fn test_gc_does_not_corrupt_vm_state_during_execution() {
         let mut heap = Heap::new();

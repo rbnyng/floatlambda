@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-// Import the necessary components from our library crate.
+// Import the necessary components from the library crate.
 use float_lambda::{
     ast::Term,
     vm,
@@ -18,8 +18,8 @@ use float_lambda::{
     parser::parse,
 };
 
-/// The prelude script, containing standard library functions written in FloatLambda.
-/// This is automatically loaded when the interpreter starts by embedding the file at compile time.
+// The prelude script, containing standard library functions written in FloatLambda.
+// This is automatically loaded when the interpreter starts by embedding the file at compile time.
 const PRELUDE_SRC: &str = include_str!("prelude.fl");
 
 #[derive(ClapParser, Debug)]
@@ -61,7 +61,7 @@ fn process_input(
     use_tree_walker: bool,
 ) -> Result<f64, String> {
 
-    // The VM path is now the primary path.
+    // The VM path is the primary path.
     // Note: The VM manages its own globals, so global_env_map is for the tree-walker.
     if !use_tree_walker {
         if is_prelude {
@@ -98,7 +98,7 @@ fn process_input(
                     global_env_map.insert(name.clone(), func_val);
                     current_term = body; // Recurse into the body
                 },
-                _ => break, // Stop when we hit the final expression (e.g., 'identity')
+                _ => break, // Stop when we hit the final expression (e.g. identity)
             }
         }
     } 
@@ -116,14 +116,14 @@ fn process_input(
          global_env_map.insert(name.clone(), func_val);
     }
     
-    // Finally, evaluate the complete term in the context of the (now correctly populated) environment.
+    // Finally, evaluate the complete term in the context of the environment.
     let final_env = Rc::new(global_env_map.clone());
     term.eval(&final_env, heap).map_err(|e| format!("Eval error: {}", e))
 }
 
 // --- HELPERS FOR HEAP INSPECTOR ---
 
-/// Formats a single f64 value for inspection, showing if it's a number, nil, or pointer.
+// Formats a single f64 value for inspection, showing if it's a number, nil, or pointer.
 fn format_value(val: f64, heap: &Heap) -> String {
     if val == NIL_VALUE {
         "nil".to_string()
@@ -145,7 +145,7 @@ fn format_value(val: f64, heap: &Heap) -> String {
     }
 }
 
-/// Recursively formats a list-like structure for pretty-printing.
+// Recursively formats a list-like structure for pretty-printing.
 fn format_list_structure(mut current_ptr: f64, heap: &Heap, max_depth: usize) -> String {
     let mut parts = Vec::new();
     for _ in 0..max_depth {
@@ -174,7 +174,7 @@ fn format_list_structure(mut current_ptr: f64, heap: &Heap, max_depth: usize) ->
     format!("({})", parts.join(" "))
 }
 
-/// Pretty-prints the details of a HeapObject for the :inspect command.
+// Pretty-prints the details of a HeapObject for the :inspect command.
 fn print_heap_object_details(obj: &HeapObject, heap: &Heap) {
     match obj {
         HeapObject::UserFunc(c) => {
@@ -244,15 +244,15 @@ fn print_heap_object_details(obj: &HeapObject, heap: &Heap) {
 // Main REPL dispatcher
 pub fn repl(use_tree_walker: bool) {
     if use_tree_walker {
-        // Run the old, simple REPL for the tree-walker
+        // Run the REPL for the tree-walker
         tree_walker_repl();
     } else {
-        // Run the new, stateful REPL for the VM
+        // Run the stateful REPL for the VM
         vm_repl();
     }
 }
 
-/// The new stateful REPL for the VM.
+// The stateful REPL for the VM.
 fn vm_repl() {
     println!("FloatLambda VM REPL v3.1");
     println!("Enter expressions, 'quit', ':examples', or ':inspect <id>'");
@@ -340,7 +340,7 @@ fn vm_repl() {
     }
 }
 
-/// The old, stateless REPL for the tree-walking interpreter.
+// The stateless REPL for the tree-walking interpreter.
 fn tree_walker_repl() {
     println!("FloatLambda Tree-Walker REPL");
     println!("Enter expressions, 'quit', ':examples', or ':inspect <id>'");
@@ -418,7 +418,7 @@ fn main() {
     }
 }
 
-/// Runs the interpreter on a given script file.
+// Runs the interpreter on a given script file.
 fn run_script(path: &Path, heap: &mut Heap, use_tree_walker: bool) -> Result<(), String> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
@@ -446,8 +446,8 @@ fn run_script(path: &Path, heap: &mut Heap, use_tree_walker: bool) -> Result<(),
     Ok(())
 }
 
-/// Helper function to print a result value, checking if it's a function.
-/// This avoids duplicating logic between the REPL and the script runner.
+// Helper function to print a result value, checking if it's a function.
+// This avoids duplicating logic between the REPL and the script runner.
 fn print_result(result: f64, heap: &Heap) {
     if let Some(id) = decode_heap_pointer(result) {
         let obj_type = match heap.get(id) {

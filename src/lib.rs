@@ -29,7 +29,6 @@ mod tests {
     fn eval_ok(input: &str) -> f64 {
         let term = parse(input).unwrap();
         let mut heap = Heap::new();
-        // The evaluator is now part of the Term struct in the evaluator module.
         term.eval(&Rc::new(HashMap::new()), &mut heap).unwrap()
     }
 
@@ -46,7 +45,6 @@ mod tests {
 
     #[test]
     fn test_var_eval() {
-        // Need to use let to bind variables now, as direct env manipulation is harder in tests
         assert_eq!(eval_ok("let x = 10.0 in x"), 10.0);
         // Test unbound variable error
         assert_eq!(
@@ -325,7 +323,6 @@ mod tests {
             ))";
         let list_code = "let mylist = (cons 1 (cons 2 (cons 3 (cons 4 nil))))";
         
-        // Let's use a predicate that works with existing builtins: is_greater_than_2
         let is_gt2 = "(λx.(> x 2))";
         
         let full_code = format!("{} in {} in let filtered_list = ((filter {}) mylist) in (car (cdr filtered_list))", filter_code, list_code, is_gt2);
@@ -352,6 +349,7 @@ mod tests {
     }
 
     // --- Recursion and Scope ---
+
     #[test]
     fn test_closure_captures_correct_env() {
         let code = "let make_adder = (λx. (λy. (+ x y))) in let add5 = (make_adder 5) in (add5 10)";
@@ -374,8 +372,6 @@ mod tests {
             list_str = format!("(cons {} {})", i, list_str);
         }
 
-        // We need the process_input function, which is in main.rs and not part of the library.
-        // For this test, we can simulate its core logic.
         let term = parse(&list_str).unwrap();
         let eval_env = Rc::new(global_env);
         let list_val = term.eval(&eval_env, &mut heap).unwrap();

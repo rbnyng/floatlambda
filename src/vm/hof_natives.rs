@@ -239,7 +239,7 @@ mod tests {
         // 2. Create the input list: (cons 1 (cons 2 nil))
         let input_list_ptr = create_list_on_heap(&mut vm, &[1.0, 2.0]);
         
-        // 3. Set up the stack for `(map add10_fn input_list)`
+        // 3. Set up the stack for (map add10_fn input_list)
         vm.stack.push(add10_fn_ptr);
         vm.stack.push(input_list_ptr);
         
@@ -263,7 +263,7 @@ mod tests {
         // 2. Create the input list: (cons 10 (cons 20 (cons 30 nil)))
         let input_list_ptr = create_list_on_heap(&mut vm, &[10.0, 20.0, 30.0]);
         
-        // 3. Set up the stack for `(foldl add_fn 0 initial_list)`
+        // 3. Set up the stack for (foldl add_fn 0 initial_list)
         vm.stack.push(add_fn_ptr);
         vm.stack.push(0.0); // Initial accumulator
         vm.stack.push(input_list_ptr);

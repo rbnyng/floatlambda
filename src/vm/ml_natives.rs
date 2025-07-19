@@ -219,7 +219,7 @@ mod tests {
     use crate::vm::vm::VM;
 
     // Helper to set up a VM with a given heap for testing.
-    // Leaking the heap gives it a 'static lifetime, which is fine for tests.
+    // Leaking the heap gives it a static lifetime, which is fine for tests.
     fn setup_vm() -> VM<'static> {
         let heap = Box::leak(Box::new(Heap::new()));
         VM::new(heap)
@@ -324,8 +324,8 @@ mod tests {
         let shape_ptr = create_list_on_heap(&mut vm, &[1.0]); // Shape [1]
         let data_ptr = create_list_on_heap(&mut vm, &[42.0]); // Data [42.0]
 
-        // For `(tensor shape data)`, stack is `[..., shape_ptr, data_ptr]`
-        // The native pops `data_ptr` then `shape_ptr`.
+        // For (tensor shape data), stack is [..., shape_ptr, data_ptr]
+        // The native pops data_ptr then shape_ptr.
         vm.stack.push(shape_ptr);
         vm.stack.push(data_ptr);
 

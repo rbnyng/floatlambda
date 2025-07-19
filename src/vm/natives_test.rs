@@ -6,7 +6,7 @@ use crate::memory::{encode_heap_pointer, Heap, HeapObject, NIL_VALUE};
 
 // Helper to set up a VM with a given stack for testing native calls
 fn setup_vm_with_stack(stack_vals: &[f64]) -> VM<'static> {
-    // Leaking the heap is a simple way to get a 'static lifetime for tests.
+    // Leaking the heap is a simple way to get a static lifetime for tests.
     // This is fine for unit testing but should not be done in production code.
     let heap = Box::leak(Box::new(Heap::new()));
     let mut vm = VM::new(heap);

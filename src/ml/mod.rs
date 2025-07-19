@@ -29,8 +29,8 @@ pub fn get_ml_builtin_arity(op: &str) -> Option<usize> {
     }
 }
 
-/// Executes an ML builtin operation.
-/// This is the single entry point for the evaluator to call into the ML library.
+// Executes an ML builtin operation.
+// This is the single entry point for the evaluator to call into the ML library.
 pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalError> {
     match op {
         "tensor" => {

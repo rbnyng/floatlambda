@@ -20,7 +20,7 @@ mod vm_tests {
     fn test_calculus_source(source: &str, expected: f64) {
         let mut heap = Heap::new();
         let result = vm::interpret(source, &mut heap).unwrap();
-        // Calculus results are approximations, allow wider tolerance (e.g., 0.1)
+        // Calculus results are approximations, allow wider tolerance (e.g. 0.1)
         assert!((result - expected).abs() < 0.1, "Expected {}, got {}", expected, result);
     }
 
@@ -165,7 +165,7 @@ mod vm_tests {
         // Test that functions can be passed as values
         test_source("let f = (λx. (+ x 1)) in let g = f in (g 5)", 6.0);
 
-        // Test an `if` expression that returns a function
+        // Test an if expression that returns a function
         test_source("let f = (if 1 then (λx.(+ x 1)) else (λx.(* x 2))) in (f 10)", 11.0);
         test_source("let f = (if 0 then (λx.(+ x 1)) else (λx.(* x 2))) in (f 10)", 20.0);
     }

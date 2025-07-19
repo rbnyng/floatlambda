@@ -7,7 +7,7 @@ use crate::interpreter::evaluator::apply_function;
 use crate::memory::{decode_heap_pointer, encode_heap_pointer, Heap, HeapObject};
 use crate::error::EvalError;
 
-/// Performs a topological sort of the computation graph starting from a root node.
+// Performs a topological sort of the computation graph starting from a root node.
 pub fn build_topo_order(root_id: u64, heap: &Heap) -> Vec<u64> {
     let mut order = Vec::new();
     let mut visited = HashSet::new();
@@ -32,7 +32,7 @@ pub fn build_topo_order(root_id: u64, heap: &Heap) -> Vec<u64> {
     order
 }
 
-/// The implementation of the grad builtin.
+// The implementation of the grad builtin.
 pub fn grad(func_ptr: f64, input_tensor_id: u64, heap: &mut Heap) -> Result<DifferentiableTensor, EvalError> {
     // 1. Run the forward pass to build the computation graph.
     let output_tensor_ptr = apply_function(func_ptr, encode_heap_pointer(input_tensor_id), heap)?;

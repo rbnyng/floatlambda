@@ -23,22 +23,22 @@ impl std::fmt::Display for InterpretError {
     }
 }
 
-/// The main entry point to run a complete script from a source string.
-/// It handles parsing, compiling, and execution in one go.
+// The main entry point to run a complete script from a source string.
+// It handles parsing, compiling, and execution in one go.
 pub fn interpret(source: &str, heap: &mut Heap) -> Result<f64, InterpretError> {
     let mut vm = VM::new(heap);
     let closure_id = vm.compile_and_load(source)?;
     vm.prime_and_run(closure_id)
 }
 
-/// Represents a single ongoing function call.
+// Represents a single ongoing function call.
 #[derive(Debug)]
 pub struct CallFrame {
-    /// Heap ID of the Function object being executed.
+    // Heap ID of the Function object being executed.
     pub closure_id: u64,
-    /// The instruction pointer for this call, pointing into the function's chunk.
+    // The instruction pointer for this call, pointing into the function's chunk.
     pub ip: usize,
-    /// The index into the VM's main value stack where this function's locals start.
+    // The index into the VM's main value stack where this function's locals start.
     pub stack_slot: usize,
 }
 
@@ -70,8 +70,8 @@ impl<'a> VM<'a> {
         }
     }
 
-    /// Compiles a source string and loads the resulting function into the heap.
-    /// Returns the heap ID of the compiled closure.
+    // Compiles a source string and loads the resulting function into the heap.
+    // Returns the heap ID of the compiled closure.
     pub fn compile_and_load(&mut self, source: &str) -> Result<u64, InterpretError> {
         let term = crate::parser::parse(source).map_err(|e| InterpretError::Compile(CompileError::Parse(e)))?;
 
@@ -84,15 +84,15 @@ impl<'a> VM<'a> {
         Ok(main_closure_id)
     }
 
-    /// Primes the VM to run a compiled closure and starts the execution loop.
+    // Primes the VM to run a compiled closure and starts the execution loop.
     pub fn prime_and_run(&mut self, closure_id: u64) -> Result<f64, InterpretError> {
         self.stack.push(encode_heap_pointer(closure_id));
         self.call_value(encode_heap_pointer(closure_id), 0)?;
         self.run()
     }
 
-    /// The re-entrant execution loop of the VM.
-    /// It runs until the number of call frames drops below what it was when the loop was entered.
+    // The re-entrant execution loop of the VM.
+    // It runs until the number of call frames drops below what it was when the loop was entered.
     pub fn run(&mut self) -> Result<f64, InterpretError> {
         let frame_count_at_start = self.frames.len();
         if frame_count_at_start == 0 {
@@ -365,7 +365,6 @@ impl<'a> VM<'a> {
                     let native = &natives::NATIVES[native_index];
                     (native.func)(self)?;
                 }
-                // The new calculus opcodes are natives now, no need for new match arms.
                 _ => return Err(InterpretError::Runtime(format!("Unimplemented opcode {:?}", op))),
             }
         }

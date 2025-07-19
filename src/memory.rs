@@ -90,7 +90,7 @@ impl Heap {
         }
     }
 
-    /// The main allocation function. This is the primary trigger for the GC.
+    // The main allocation function. This is the primary trigger for the GC.
     pub fn register(&mut self, obj: HeapObject) -> u64 {
         self.allocations_since_gc += 1;
         // Trigger a GC cycle if we've allocated a lot, or if we are out of memory.
@@ -124,8 +124,8 @@ impl Heap {
         }
     }
     
-    /// Kicks off a new garbage collection cycle.
-    /// The VM calls this with its current set of roots (stack, globals, etc.).
+    // Kicks off a new garbage collection cycle.
+    // The VM calls this with its current set of roots (stack, globals, etc.).
     pub fn start_gc_cycle(&mut self, roots: &[f64]) {
         if self.state != GcState::Idle {
             return; // Already collecting
@@ -144,8 +144,8 @@ impl Heap {
         }
     }
     
-    /// Performs one unit of work for the garbage collector.
-    /// This should be called periodically by the VM or allocator.
+    // Performs one unit of work for the garbage collector.
+    // This should be called periodically by the VM or allocator.
     pub fn gc_step(&mut self) {
         match self.state {
             GcState::Idle => { /* Do nothing */ },
@@ -191,8 +191,6 @@ impl Heap {
         }
     }
 
-    /// The original collect is now just a way to force a full, blocking GC cycle.
-    /// Useful for tests or when exiting the program.
     pub fn collect_full(&mut self, roots: &[f64]) {
         self.start_gc_cycle(roots);
         while self.state != GcState::Idle {
@@ -211,7 +209,7 @@ impl Heap {
         }
     }
     
-    /// Helper to trace the children of a single object.
+    // Helper to trace the children of a single object.
     fn trace_references(&mut self, id: u64) {
         // Store relevant data out of the heap object and then process
         let obj_clone_data = {
@@ -270,14 +268,14 @@ impl Heap {
         }
     }
 
-    /// Marks a value if it's a white pointer.
+    // Marks a value if it's a white pointer.
     fn mark_value(&mut self, val: f64) {
         if let Some(id) = decode_heap_pointer(val) {
             self.mark_id(id);
         }
     }
     
-    /// Marks an object by its ID if it's white.
+    // Marks an object by its ID if it's white.
     fn mark_id(&mut self, id: u64) {
         if id as usize >= self.marked_bits.len() || self.marked_bits[id as usize] != GcColor::White {
             return;
@@ -286,7 +284,7 @@ impl Heap {
         self.worklist.push(id);
     }
 
-    // The old collect method is renamed to collect_full.
+    // An alias from refactoring
     pub fn collect(&mut self, roots: &[f64]) {
         self.collect_full(roots);
     }

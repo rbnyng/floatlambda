@@ -201,7 +201,7 @@ lazy_static! {
         all_natives
     };
 
-    // Create a unified PHF map for the compiler. This is built once at runtime
+    // Create a unified map for the compiler. This is built once at runtime
     // from the unified NATIVES list, ensuring indices are always correct.
     pub static ref NATIVE_MAP: HashMap<&'static str, (u8, usize)> = {
         let mut map = HashMap::new();

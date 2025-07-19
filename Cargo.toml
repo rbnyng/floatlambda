@@ -6,8 +6,6 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 rand = "0.8"
-phf = { version = "0.12", features = ["macros"] }
-paste = "1.0.15"
 lazy_static = "1.5.0"
 
 [features]
