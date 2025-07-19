@@ -5,6 +5,7 @@
 
 use clap::Parser as ClapParser;
 use float_lambda::memory::encode_heap_pointer;
+use float_lambda::vm::closure::Upvalue;
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -61,11 +62,8 @@ fn process_input(
 ) -> Result<f64, String> {
 
     // The VM path is now the primary path.
-    // Note: The VM manages its own globals, so `global_env_map` is for the tree-walker.
+    // Note: The VM manages its own globals, so global_env_map is for the tree-walker.
     if !use_tree_walker {
-        // We still need to handle the prelude case separately for the VM.
-        // A full solution would make the VM's globals accessible, but for now,
-        // let's just combine the prelude and the script for the VM.
         if is_prelude {
             // The prelude is loaded by the main function, so we do nothing here.
             return Ok(0.0); // Return a dummy value
@@ -73,7 +71,7 @@ fn process_input(
         return vm::interpret(input, heap).map_err(|e| e.to_string());
     }
     
-    // --- Tree-walker path (fallback / for ML code) ---
+    // --- Tree-walker path ---
     let term = parse(input).map_err(|e| format!("Parse error: {}", e))?;
     if !is_prelude {
         println!("Parsed: {}", term);
@@ -211,9 +209,35 @@ fn print_heap_object_details(obj: &HeapObject, heap: &Heap) {
                         println!("  Type: Free Slot");
                         println!("  Points to next free slot: {:?}", if *next == u64::MAX { "None".to_string() } else { next.to_string() });
                     }
-        HeapObject::Function(_function) => todo!(),
-        HeapObject::Closure(_closure) => todo!(),
-        HeapObject::Upvalue(_) => todo!(),
+        HeapObject::Function(func) => {
+                        println!("  Type: Function Definition");
+                        println!("  Name: {}", func.name);
+                        println!("  Arity: {}", func.arity);
+                        println!("  Upvalue Count: {}", func.upvalue_count);
+                        println!("  Code size: {} bytes", func.chunk.code.len());
+                        println!("  Constants: {} values", func.chunk.constants.len());
+                    }
+        HeapObject::Closure(closure) => {
+                        println!("  Type: Closure");
+                        println!("  Function: {}", format_value(encode_heap_pointer(closure.func_id), heap));
+                        let formatted_upvalues: Vec<String> = closure.upvalues.iter()
+                            .map(|&id| format_value(encode_heap_pointer(id), heap))
+                            .collect();
+                        println!("  Upvalues: [{}]", formatted_upvalues.join(", "));
+                    }
+        HeapObject::Upvalue(upvalue) => {
+                        println!("  Type: Upvalue");
+                        match upvalue {
+                            Upvalue::Open(location) => {
+                                println!("  Status: Open (points to stack slot {})", location);
+                                // We don't have access to the VM's stack here, so can't show actual value.
+                            }
+                            Upvalue::Closed(val) => {
+                                println!("  Status: Closed");
+                                println!("  Value: {}", format_value(*val, heap));
+                            }
+                        }
+                    }
     }
 }
 
