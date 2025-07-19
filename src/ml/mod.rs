@@ -20,7 +20,8 @@ pub fn get_ml_builtin_arity(op: &str) -> Option<usize> {
         "get_data" | "get_shape" | "get_grad" |
         "transpose" | "sum_t" | "mean_t" |
         "sigmoid_t" | "relu_t" |
-        "adamw_init_state" | "flatten"
+        "adamw_init_state" |
+        "flatten"
         => Some(1),
 
         // Binary
@@ -29,21 +30,51 @@ pub fn get_ml_builtin_arity(op: &str) -> Option<usize> {
         => Some(2),
 
         // Ternary
-        "sgd_update"
+        "sgd_update" |
+        "max_pool2d" // --- ADDED ---
         => Some(3),
 
-        // 8 arguments: params, grads, state, lr, b1, b2, eps, wd
+        // 8 arguments
         "adamw_update"
         => Some(8),
+
+        // 5 arguments: input, weights, bias, stride, padding
+        "conv2d"
+        => Some(5),
 
         _ => None,
     }
 }
 
 // Executes an ML builtin operation.
-// This is the single entry point for the evaluator to call into the ML library.
 pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64, EvalError> {
     match op {
+        "conv2d" => {
+            let input_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("conv2d expects a tensor for input".to_string()))?;
+            let weights_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("conv2d expects a tensor for weights".to_string()))?;
+            let bias_id = decode_heap_pointer(args[2]).ok_or_else(|| EvalError::TypeError("conv2d expects a tensor for bias".to_string()))?;
+            let stride = args[3] as usize;
+            let padding = args[4] as usize;
+
+            let input = heap.get_tensor_mut(input_id)?.clone();
+            let weights = heap.get_tensor_mut(weights_id)?.clone();
+            let bias = heap.get_tensor_mut(bias_id)?.clone();
+
+            let res = ops::conv2d(input_id, &input, weights_id, &weights, bias_id, &bias, stride, padding)?;
+            let res_id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(res_id))
+        }
+        "max_pool2d" => {
+            let input_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("max_pool2d expects a tensor for input".to_string()))?;
+            let kernel_size = args[1] as usize;
+            let stride = args[2] as usize;
+            
+            let input = heap.get_tensor_mut(input_id)?.clone();
+
+            let res = ops::max_pool2d(input_id, &input, kernel_size, stride)?;
+            let res_id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(res_id))
+        }
         "tensor" => {
             let shape_vec = list_to_vec(args[0], heap)?.iter().map(|&x| x as usize).collect();
             let data_vec = list_to_vec(args[1], heap)?;
@@ -90,6 +121,22 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let res_id = heap.register(HeapObject::Tensor(res));
             Ok(encode_heap_pointer(res_id))
         }
+        "softmax_ce_loss" => {
+            let y_true_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("softmax_ce_loss expects a tensor for y_true".to_string()))?;
+            let logits_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("softmax_ce_loss expects a tensor for logits".to_string()))?;
+            let y_true = heap.get_tensor_mut(y_true_id)?.clone();
+            let logits = heap.get_tensor_mut(logits_id)?.clone();
+            let res = ops::softmax_ce_loss(y_true_id, &y_true, logits_id, &logits)?;
+            let res_id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(res_id))
+        }
+        "flatten" => {
+            let id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("flatten expects a tensor".to_string()))?;
+            let t = heap.get_tensor_mut(id)?.clone();
+            let res = ops::flatten(id, &t)?;
+            let res_id = heap.register(HeapObject::Tensor(res));
+            Ok(encode_heap_pointer(res_id))
+        }
         "sgd_update" => {
             let params_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("sgd_update expects a tensor".to_string()))?;
             let grads_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("sgd_update expects a tensor".to_string()))?;
@@ -108,7 +155,6 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let m_id = heap.register(HeapObject::Tensor(m));
             let v_id = heap.register(HeapObject::Tensor(v));
 
-            // Build state list: (cons m (cons v (cons t nil)))
             let t_cons = heap.register(HeapObject::Pair(t, NIL_VALUE));
             let v_cons = heap.register(HeapObject::Pair(encode_heap_pointer(v_id), encode_heap_pointer(t_cons)));
             let m_cons = heap.register(HeapObject::Pair(encode_heap_pointer(m_id), encode_heap_pointer(v_cons)));
@@ -119,7 +165,6 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let params_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("adamw_update: arg 1 (params) must be a tensor".to_string()))?;
             let grads_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("adamw_update: arg 2 (grads) must be a tensor".to_string()))?;
             
-            // Unpack state list
             let state_vec = list_to_vec(args[2], heap)?;
             if state_vec.len() != 3 { return Err(EvalError::TypeError("adamw_update: arg 3 (state) must be a list of 3 elements [m, v, t]".to_string())); }
             let m_id = decode_heap_pointer(state_vec[0]).ok_or_else(|| EvalError::TypeError("adamw_update: state element m must be a tensor".to_string()))?;
@@ -143,8 +188,6 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let new_m_id = heap.register(HeapObject::Tensor(new_m));
             let new_v_id = heap.register(HeapObject::Tensor(new_v));
 
-            // Build result list: (cons new_params (cons new_state nil))
-            // where new_state is (cons new_m (cons new_v (cons new_t nil)))
             let new_t_cons = heap.register(HeapObject::Pair(new_t, NIL_VALUE));
             let new_v_cons = heap.register(HeapObject::Pair(encode_heap_pointer(new_v_id), encode_heap_pointer(new_t_cons)));
             let new_m_cons = heap.register(HeapObject::Pair(encode_heap_pointer(new_m_id), encode_heap_pointer(new_v_cons)));
@@ -152,22 +195,6 @@ pub fn execute_ml_builtin(op: &str, args: &[f64], heap: &mut Heap) -> Result<f64
             let result_cons = heap.register(HeapObject::Pair(encode_heap_pointer(new_params_id), encode_heap_pointer(new_m_cons)));
 
             Ok(encode_heap_pointer(result_cons))
-        }
-        "softmax_ce_loss" => {
-            let y_true_id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("softmax_ce_loss expects a tensor for y_true".to_string()))?;
-            let logits_id = decode_heap_pointer(args[1]).ok_or_else(|| EvalError::TypeError("softmax_ce_loss expects a tensor for logits".to_string()))?;
-            let y_true = heap.get_tensor_mut(y_true_id)?.clone();
-            let logits = heap.get_tensor_mut(logits_id)?.clone();
-            let res = ops::softmax_ce_loss(y_true_id, &y_true, logits_id, &logits)?;
-            let res_id = heap.register(HeapObject::Tensor(res));
-            Ok(encode_heap_pointer(res_id))
-        }
-        "flatten" => {
-            let id = decode_heap_pointer(args[0]).ok_or_else(|| EvalError::TypeError("flatten expects a tensor".to_string()))?;
-            let t = heap.get_tensor_mut(id)?.clone();
-            let res = ops::flatten(id, &t)?;
-            let res_id = heap.register(HeapObject::Tensor(res));
-            Ok(encode_heap_pointer(res_id))
         }
         "grad" => {
             let func_ptr = args[0];
