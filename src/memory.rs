@@ -119,49 +119,66 @@ impl Heap {
             if let Some(obj) = self.get(id) {
                 match obj {
                     HeapObject::UserFunc(closure) => {
-                                                                        // A ASTClosure is a root for objects in its environment.
-                                                                        for val in closure.env.values() {
-                                                                            if let Some(child_id) = decode_heap_pointer(*val) {
-                                                                                worklist.push(child_id);
-                                                                            }
-                                                                        }
-                                                                    }
+                        // A ASTClosure is a root for objects in its environment.
+                        for val in closure.env.values() {
+                            if let Some(child_id) = decode_heap_pointer(*val) {
+                                worklist.push(child_id);
+                            }
+                        }
+                    }
                     HeapObject::Pair(car, cdr) => {
-                                                                        // A pair is a root for the objects in its car and cdr.
-                                                                        if let Some(car_id) = decode_heap_pointer(*car) {
-                                                                            worklist.push(car_id);
-                                                                        }
-                                                                        if let Some(cdr_id) = decode_heap_pointer(*cdr) {
-                                                                            worklist.push(cdr_id);
-                                                                        }
-                                                                    }
-                    HeapObject::BuiltinFunc(closure) => { // Trace through partially applied builtins
-                                                                        for arg in &closure.args {
-                                                                            if let Some(child_id) = decode_heap_pointer(*arg) {
-                                                                                worklist.push(child_id);
-                                                                            }
-                                                                        }
-                                                                    }
+                        // A pair is a root for the objects in its car and cdr.
+                        if let Some(car_id) = decode_heap_pointer(*car) {
+                            worklist.push(car_id);
+                        }
+                        if let Some(cdr_id) = decode_heap_pointer(*cdr) {
+                            worklist.push(cdr_id);
+                        }
+                    }
+                    HeapObject::BuiltinFunc(closure) => { 
+                        // Trace through partially applied builtins
+                        for arg in &closure.args {
+                            if let Some(child_id) = decode_heap_pointer(*arg) {
+                                worklist.push(child_id);
+                            }
+                        }
+                    }
                     HeapObject::Tensor(tensor) => {
-                                                                        if let Some(ctx) = &tensor.context {
-                                                                            for &parent_id in &ctx.parents {
-                                                                                worklist.push(parent_id);
-                                                                            }
-                                                                        }
-                                                                    }
+                        if let Some(ctx) = &tensor.context {
+                            for &parent_id in &ctx.parents {
+                                worklist.push(parent_id);
+                            }
+                        }
+                    }
                     HeapObject::Free(_) => {
-                        
-                                                                    }
-                    HeapObject::Function(_func) => {
-                                                        // The GC needs to trace through the function's constants.
-                                                        // For now, a todo is fine, but this will be important later.
-                                                        // for constant in &func.chunk.constants { todo!() }
-                                                    }
-                    HeapObject::Closure(_closure) => {
-                        
-                                    }
-                    HeapObject::Upvalue(_upvalue) => {
-                        
+                        // Free slots contain no live data
+                    }
+                    HeapObject::Function(func) => {
+                        // A function's constants can be heap pointers (e.g., to other functions
+                        // for creating closures). We trace them.
+                        for constant in &func.chunk.constants {
+                            if let Some(const_id) = decode_heap_pointer(*constant) {
+                                worklist.push(const_id);
+                            }
+                        }
+                    }
+                    HeapObject::Closure(closure) => {
+                        // A closure holds a reference to its function definition and its upvalues.
+                        // We trace both to keep them alive.
+                        worklist.push(closure.func_id);
+                        for &upvalue_id in closure.upvalues.iter() {
+                            worklist.push(upvalue_id);
+                        }
+                    }
+                    HeapObject::Upvalue(upvalue) => {
+                        // An upvalue is either open (pointing to the stack, not the heap)
+                        // or closed. If it's closed, it holds a value which could be a heap
+                        // pointer, so we trace it.
+                        if let Upvalue::Closed(val) = upvalue {
+                            if let Some(val_id) = decode_heap_pointer(*val) {
+                                worklist.push(val_id);
+                            }
+                        }
                     }
                 }
             }
