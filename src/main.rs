@@ -21,6 +21,8 @@ use float_lambda::{
 // The prelude script, containing standard library functions written in FloatLambda.
 // This is automatically loaded when the interpreter starts by embedding the file at compile time.
 const PRELUDE_SRC: &str = include_str!("prelude.fl");
+// Static variable to track last loaded file
+static mut LAST_LOADED_FILE: Option<String> = None;
 
 #[derive(ClapParser, Debug)]
 #[command(version, about, long_about = None)]
@@ -30,6 +32,220 @@ struct Cli {
     // Use the slower, feature-complete tree-walking interpreter instead of the VM.
     #[arg(long, default_value_t = false)]
     use_tree_walker: bool,
+}
+
+/// Handle REPL commands that start with ':'
+/// Returns true if the command was handled, false if it should be treated as normal input
+fn handle_repl_command(
+    input: &str, 
+    heap: &mut Heap, 
+    vm_globals: Option<&HashMap<String, f64>>,
+    vm_stack_len: Option<usize>,
+    vm_frames_len: Option<usize>,
+    global_env_map: Option<&HashMap<String, f64>>,
+    last_result: f64,
+    use_tree_walker: bool
+) -> Result<bool, String> {
+    if !input.starts_with(':') {
+        return Ok(false);
+    }
+    
+    let parts: Vec<&str> = input.split_whitespace().collect();
+    let command = parts[0];
+    
+    match command {
+        ":help" | ":h" => {
+            println!("FloatLambda REPL Commands:");
+            println!("  :help, :h           Show this help");
+            println!("  :examples           Show example expressions");
+            println!("  :inspect <id>       Inspect heap object by ID");
+            println!("  :gc                 Force garbage collection");
+            println!("  :memory, :mem       Show memory statistics");
+            println!("  :load <file>        Load and run a .fl file");
+            println!("  :reload, :r         Reload the last loaded file");
+            println!("  :clear              Clear the screen");
+            println!("  quit, exit          Exit the REPL");
+        }
+        
+        ":gc" => {
+            // For VM mode, we'll handle this as a special case in the main loop
+            // since we need access to the full VM state for proper root collection
+            if use_tree_walker {
+                let before = heap.alive_count();
+                if let Some(env_map) = global_env_map {
+                    let mut roots: Vec<f64> = env_map.values().copied().collect();
+                    roots.push(last_result);
+                    heap.collect_full(&roots);
+                }
+                let after = heap.alive_count();
+                let collected = before.saturating_sub(after);
+                println!("GC: {} → {} objects ({} collected)", before, after, collected);
+            } else {
+                // Return false so the main loop can handle this with proper VM access
+                return Ok(false);
+            }
+        }
+        
+        ":memory" | ":mem" => {
+            println!("=== Memory Statistics ===");
+            println!("Heap objects: {}", heap.alive_count());
+            
+            if use_tree_walker {
+                if let Some(env_map) = global_env_map {
+                    println!("Global variables: {}", env_map.len());
+                }
+            } else {
+                if let Some(globals) = vm_globals {
+                    println!("VM globals: {}", globals.len());
+                }
+                if let Some(stack_len) = vm_stack_len {
+                    println!("VM stack depth: {}", stack_len);
+                }
+                if let Some(frames_len) = vm_frames_len {
+                    println!("VM call frames: {}", frames_len);
+                }
+            }
+        }
+        
+        ":load" => {
+            if parts.len() != 2 {
+                println!("Usage: :load <filename>");
+                return Ok(true);
+            }
+            
+            let filename = parts[1];
+            let path = std::path::Path::new(filename);
+            
+            if !path.exists() {
+                println!("Error: File '{}' not found", filename);
+                return Ok(true);
+            }
+            
+            match run_script(path, heap, use_tree_walker) {
+                Ok(_) => {
+                    unsafe { LAST_LOADED_FILE = Some(filename.to_string()); }
+                    println!("✓ Loaded: {}", filename);
+                }
+                Err(e) => println!("✗ Error loading '{}': {}", filename, e),
+            }
+        }
+        
+        ":reload" | ":r" => {
+            unsafe {
+                if let Some(ref filename) = LAST_LOADED_FILE {
+                    let path = std::path::Path::new(filename);
+                    match run_script(path, heap, use_tree_walker) {
+                        Ok(_) => println!("✓ Reloaded: {}", filename),
+                        Err(e) => println!("✗ Error reloading '{}': {}", filename, e),
+                    }
+                } else {
+                    println!("No file to reload. Use :load <filename> first.");
+                }
+            }
+        }
+        
+        ":clear" => {
+            // Clear screen using ANSI escape codes
+            print!("\x1B[2J\x1B[1;1H");
+            std::io::Write::flush(&mut std::io::stdout()).unwrap();
+        }
+
+        ":examples" => {
+            show_examples();
+        }
+
+        // Handle :inspect command
+        cmd if cmd.starts_with(":inspect") => {
+            if parts.len() != 2 {
+                println!("Usage: :inspect <heap_id>");
+                return Ok(true);
+            }
+            
+            if let Ok(id) = parts[1].parse::<u64>() {
+                match heap.get(id) {
+                    Some(obj) => {
+                        println!("Heap Object [{}]:", id);
+                        print_heap_object_details(obj, heap);
+                    }
+                    None => println!("Error: No object found at heap ID {}.", id),
+                }
+            } else {
+                println!("Error: Invalid heap ID '{}'. Must be a number.", parts[1]);
+            }
+        }
+        
+        _ => {
+            println!("Unknown command: {}. Type :help for available commands.", command);
+        }
+    }
+    
+    Ok(true)
+}
+
+/// Reads a complete FloatLambda expression, handling multi-line input
+/// Returns the complete input when brackets are balanced and parsing succeeds
+fn read_complete_expression() -> std::io::Result<String> {
+    let mut input_buffer = String::new();
+    let mut paren_depth = 0;
+    let mut in_string = false;
+    let mut escape_next = false;
+    
+    loop {
+        // Show appropriate prompt
+        if input_buffer.trim().is_empty() {
+            print!("> ");
+        } else {
+            print!("... ");
+        }
+        std::io::Write::flush(&mut std::io::stdout())?;
+        
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+        
+        // Handle special REPL commands on their own line
+        let trimmed = line.trim();
+        if input_buffer.trim().is_empty() && (
+            trimmed.starts_with(':') || 
+            trimmed == "quit" || 
+            trimmed == "exit"
+        ) {
+            return Ok(trimmed.to_string());
+        }
+        
+        input_buffer.push_str(&line);
+        
+        // Track bracket depth and string state
+        for ch in line.chars() {
+            match ch {
+                '"' if !escape_next && !in_string => in_string = true,
+                '"' if !escape_next && in_string => in_string = false,
+                '\\' if in_string => escape_next = !escape_next,
+                '(' if !in_string => paren_depth += 1,
+                ')' if !in_string => paren_depth -= 1,
+                _ => escape_next = false,
+            }
+        }
+        
+        // Check if we have a complete expression
+        if paren_depth == 0 && !in_string && !input_buffer.trim().is_empty() {
+            // Try to parse to see if it's complete
+            match float_lambda::parser::parse(input_buffer.trim()) {
+                Ok(_) => return Ok(input_buffer.trim().to_string()),
+                Err(_) => {
+                    // Parse failed - might be incomplete, continue reading
+                    // But if we have negative paren depth, it's definitely an error
+                    if paren_depth < 0 {
+                        return Ok(input_buffer.trim().to_string());
+                    }
+                }
+            }
+        }
+        
+        // If we have negative paren depth, return immediately (syntax error)
+        if paren_depth < 0 {
+            return Ok(input_buffer.trim().to_string());
+        }
+    }
 }
 
 fn show_examples() {
@@ -255,14 +471,13 @@ pub fn repl(use_tree_walker: bool) {
 // The stateful REPL for the VM.
 fn vm_repl() {
     println!("FloatLambda VM REPL v3.1");
-    println!("Enter expressions, 'quit', ':examples', or ':inspect <id>'");
+    println!("Enter expressions, type :help for commands, or 'quit' to exit");
 
     let mut heap = Heap::new();
-    // Create a single, long-lived VM instance.
     let mut vm = vm::vm::VM::new(&mut heap);
     let mut last_result = 0.0;
 
-    // 1. Compile and run the prelude once to populate the VM's globals.
+    // Load the prelude
     println!("Loading prelude...");
     match vm.compile_and_load(PRELUDE_SRC) {
         Ok(prelude_closure_id) => {
@@ -276,59 +491,83 @@ fn vm_repl() {
             std::process::exit(1);
         }
     }
-    // The prelude might leave a value on the stack, clear it.
     vm.stack.clear();
 
     loop {
-        // --- GC ---
-        // Root the VM's globals and the last result.
+        // Get complete expression (handles multi-line input)
+        let input_str = match read_complete_expression() {
+            Ok(input) => input,
+            Err(e) => {
+                eprintln!("Input error: {}", e);
+                continue;
+            }
+        };
+
+        if input_str == "quit" || input_str == "exit" { 
+            break; 
+        }
+        if input_str.is_empty() { 
+            continue; 
+        }
+
+        // Handle REPL commands
+        let command_result = {
+            // Create a separate scope to avoid borrowing conflicts
+            let vm_globals = &vm.globals;
+            let vm_stack_len = vm.stack.len();
+            let vm_frames_len = vm.frames.len();
+            
+            handle_repl_command(
+                &input_str, 
+                vm.heap, 
+                Some(vm_globals),
+                Some(vm_stack_len),
+                Some(vm_frames_len),
+                None, 
+                last_result, 
+                false
+            )
+        };
+        
+        match command_result {
+            Ok(true) => continue,  // Command was handled
+            Ok(false) => {},       // Not a command, continue with normal processing
+            Err(e) => {
+                println!("Command error: {}", e);
+                continue;
+            }
+        }
+
+        // Special case for :gc command in VM mode - handle it specially
+        if input_str == ":gc" {
+            let before = vm.heap.alive_count();
+            let mut roots: Vec<f64> = vm.globals.values().copied().collect();
+            roots.push(last_result);
+            roots.extend_from_slice(&vm.stack);
+            for frame in &vm.frames {
+                roots.push(encode_heap_pointer(frame.closure_id));
+            }
+            vm.heap.collect_full(&roots);
+            let after = vm.heap.alive_count();
+            let collected = before.saturating_sub(after);
+            println!("GC: {} → {} objects ({} collected)", before, after, collected);
+            continue;
+        }
+
+        // GC before evaluation
         let mut roots: Vec<f64> = vm.globals.values().copied().collect();
         roots.push(last_result);
-        roots.extend_from_slice(&vm.stack); // Root the entire stack
+        roots.extend_from_slice(&vm.stack);
         for frame in &vm.frames {
-            roots.push(encode_heap_pointer(frame.closure_id)); // Root active closures
+            roots.push(encode_heap_pointer(frame.closure_id));
         }
         
-        print!("> ");
-        std::io::Write::flush(&mut std::io::stdout()).unwrap();
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-        let input_str = input.trim();
-
-        if input_str == "quit" || input_str == "exit" { break; }
-        if input_str.is_empty() { continue; }
-        if input_str == ":examples" {
-            show_examples();
-            continue;
-        }
-        if input_str.starts_with(":inspect") {
-            let parts: Vec<&str> = input_str.split_whitespace().collect();
-            if parts.len() == 2 {
-                if let Ok(id) = parts[1].parse::<u64>() {
-                    match vm.heap.get(id) {
-                        Some(obj) => {
-                            println!("Heap Object [{}]:", id);
-                            print_heap_object_details(obj, vm.heap);
-                        }
-                        None => println!("Error: No object found at heap ID {}.", id),
-                    }
-                } else {
-                     println!("Error: Invalid heap ID '{}'. Must be a number.", parts[1]);
-                }
-            } else {
-                println!("Usage: :inspect <heap_id>");
-            }
-            continue;
-        }
-
-        // 2. Compile and run the user's input line.
-        match vm.compile_and_load(input_str) {
+        // Compile and run the user's input
+        match vm.compile_and_load(&input_str) {
             Ok(closure_id) => {
                 match vm.prime_and_run(closure_id) {
                     Ok(result) => {
                         last_result = result;
-                        // The result from run() is already popped, but prime_and_run pushes it back.
-                        // So we need to pop it here before printing.
                         let final_val = vm.stack.pop().unwrap_or(result);
                         print_result(final_val, vm.heap);
                     }
@@ -338,61 +577,67 @@ fn vm_repl() {
             Err(e) => println!("Error: {}", e),
         }
     }
+    
+    println!("Goodbye!");
 }
 
 // The stateless REPL for the tree-walking interpreter.
 fn tree_walker_repl() {
     println!("FloatLambda Tree-Walker REPL");
-    println!("Enter expressions, 'quit', ':examples', or ':inspect <id>'");
+    println!("Enter expressions, type :help for commands, or 'quit' to exit");
+    
     let mut heap = Heap::new();
     let mut global_env_map = HashMap::new();
     let mut last_result = 0.0;
     
-    // Load prelude into the tree-walker's environment
+    // Load prelude
     if let Err(e) = process_input(PRELUDE_SRC, &mut heap, &mut global_env_map, true, true) {
         eprintln!("Fatal Error loading prelude: {}", e);
         std::process::exit(1);
     }
     
     loop {
-        // --- GC ---
+        // Get complete expression (handles multi-line input)
+        let input_str = match read_complete_expression() {
+            Ok(input) => input,
+            Err(e) => {
+                eprintln!("Input error: {}", e);
+                continue;
+            }
+        };
+
+        if input_str == "quit" || input_str == "exit" { 
+            break; 
+        }
+        if input_str.is_empty() { 
+            continue; 
+        }
+
+        // Handle REPL commands
+        match handle_repl_command(
+            &input_str, 
+            &mut heap, 
+            None,
+            None,
+            None,
+            Some(&global_env_map), 
+            last_result, 
+            true
+        ) {
+            Ok(true) => continue,  // Command was handled
+            Ok(false) => {},       // Not a command, continue with normal processing
+            Err(e) => {
+                println!("Command error: {}", e);
+                continue;
+            }
+        }
+
+        // GC before evaluation
         let mut roots: Vec<f64> = global_env_map.values().copied().collect();
         roots.push(last_result);
         heap.start_gc_cycle(&roots); 
 
-        print!("> ");
-        std::io::Write::flush(&mut std::io::stdout()).unwrap();
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-        let input_str = input.trim();
-
-        if input_str == "quit" || input_str == "exit" { break; }
-        if input_str.is_empty() { continue; }
-        if input_str == ":examples" {
-            show_examples();
-            continue;
-        }
-        if input_str.starts_with(":inspect") {
-            let parts: Vec<&str> = input_str.split_whitespace().collect();
-            if parts.len() == 2 {
-                if let Ok(id) = parts[1].parse::<u64>() {
-                    match heap.get(id) {
-                        Some(obj) => {
-                            println!("Heap Object [{}]:", id);
-                            print_heap_object_details(obj, &heap);
-                        }
-                        None => println!("Error: No object found at heap ID {}.", id),
-                    }
-                } else {
-                     println!("Error: Invalid heap ID '{}'. Must be a number.", parts[1]);
-                }
-            } else {
-                println!("Usage: :inspect <heap_id>");
-            }
-            continue;
-        }
-
-        match process_input(input_str, &mut heap, &mut global_env_map, false, true) {
+        match process_input(&input_str, &mut heap, &mut global_env_map, false, true) {
             Ok(result) => {
                 last_result = result;
                 print_result(result, &heap);
@@ -400,8 +645,9 @@ fn tree_walker_repl() {
             Err(e) => println!("Error: {}", e),
         }
     }
+    
+    println!("Goodbye!");
 }
-
 fn main() {
     let cli = Cli::parse();
     let mut heap = Heap::new();
