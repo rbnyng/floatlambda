@@ -48,6 +48,7 @@ pub struct VM<'a> {
     pub stack: Vec<f64>,
     pub globals: HashMap<String, f64>,
     open_upvalues: Vec<u64>,
+    pub gc_disabled: bool, 
 }
 
 // Helper function for fuzzy equality
@@ -67,6 +68,7 @@ impl<'a> VM<'a> {
             stack: Vec::with_capacity(256),
             globals: HashMap::new(),
             open_upvalues: Vec::new(),
+            gc_disabled: false, 
         }
     }
 
@@ -100,7 +102,7 @@ impl<'a> VM<'a> {
         }
 
         loop {
-            if self.heap.needs_collect() {
+            if !self.gc_disabled && self.heap.needs_collect() {
                 // Gather all roots from the VM's current state.
                 let mut roots: Vec<f64> = self.globals.values().copied().collect();
                 roots.extend_from_slice(&self.stack);
@@ -378,7 +380,11 @@ impl<'a> VM<'a> {
                 OpCode::OpNative => {
                     let native_index = self.read_byte() as usize;
                     let native = &natives::NATIVES[native_index];
-                    (native.func)(self)?;
+                    self.gc_disabled = true;
+                    let result = (native.func)(self);
+                    self.gc_disabled = false;
+                    
+                    result?; // Propagate any error from the native function
                 }
                 _ => return Err(InterpretError::Runtime(format!("Unimplemented opcode {:?}", op))),
             }
