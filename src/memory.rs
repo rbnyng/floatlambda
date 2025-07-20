@@ -12,6 +12,9 @@ use crate::vm::closure::{Closure as VMClosure, Upvalue};
 // --- Core Data Structures ---
 pub const NIL_VALUE: f64 = f64::NEG_INFINITY;
 
+// A heuristic to decide when to trigger a collection.
+const GC_ALLOCATION_THRESHOLD: usize = 2000;
+
 pub type Environment = Rc<HashMap<String, f64>>;
 
 #[derive(Debug, Clone)]
@@ -93,19 +96,6 @@ impl Heap {
     // The main allocation function. This is the primary trigger for the GC.
     pub fn register(&mut self, obj: HeapObject) -> u64 {
         self.allocations_since_gc += 1;
-        // Trigger a GC cycle if we've allocated a lot, or if we are out of memory.
-        if self.allocations_since_gc > 100 || self.free_list_head.is_none() {
-            // Perform some GC work. We can tune the amount of work done per step.
-            // For simplicity, let's do a few steps.
-            for _ in 0..20 {
-                if self.state != GcState::Idle {
-                    self.gc_step();
-                } else {
-                    break;
-                }
-            }
-            self.allocations_since_gc = 0;
-        }
 
         if let Some(free_index) = self.free_list_head {
             let next_free_opt = self.objects[free_index as usize].take();
@@ -122,6 +112,18 @@ impl Heap {
             self.marked_bits.push(GcColor::White);
             (self.objects.len() - 1) as u64
         }
+    }
+
+    /// Signals to the VM that a collection might be necessary.
+    pub fn needs_collect(&self) -> bool {
+        // Collect if we are completely out of recycled slots, or if we've
+        // made a large number of allocations since the last collection.
+        self.free_list_head.is_none() || self.allocations_since_gc > GC_ALLOCATION_THRESHOLD
+    }
+
+    /// Resets the allocation counter after a successful GC.
+    pub fn reset_allocation_count(&mut self) {
+        self.allocations_since_gc = 0;
     }
     
     // Kicks off a new garbage collection cycle.

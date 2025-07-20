@@ -100,6 +100,21 @@ impl<'a> VM<'a> {
         }
 
         loop {
+            if self.heap.needs_collect() {
+                // Gather all roots from the VM's current state.
+                let mut roots: Vec<f64> = self.globals.values().copied().collect();
+                roots.extend_from_slice(&self.stack);
+                for frame in &self.frames {
+                    roots.push(encode_heap_pointer(frame.closure_id));
+                }
+                
+                // Run a full collection cycle.
+                self.heap.collect_full(&roots);
+                
+                // Tell the heap we are done, so it can reset its counter.
+                self.heap.reset_allocation_count();
+            }
+
             let frame = self.frames.last().unwrap();
             let ip = frame.ip;
             let closure_id = frame.closure_id;
